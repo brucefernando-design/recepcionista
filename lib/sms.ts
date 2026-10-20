@@ -4,10 +4,14 @@ import twilio from "twilio";
 import type { Business } from "./types";
 
 function getClient(business?: Business) {
-  const sid = business?.twilioSid || process.env.TWILIO_ACCOUNT_SID;
-  const token = business?.twilioToken || process.env.TWILIO_AUTH_TOKEN;
-  if (!sid || !token) return null;
-  return twilio(sid, token);
+  try {
+    const sid = business?.twilioSid || process.env.TWILIO_ACCOUNT_SID;
+    const token = business?.twilioToken || process.env.TWILIO_AUTH_TOKEN;
+    if (!sid || !token || !sid.startsWith("AC")) return null;
+    return twilio(sid, token);
+  } catch {
+    return null;
+  }
 }
 
 // Best-effort E.164 normalization so "555 010 1001" style numbers from
