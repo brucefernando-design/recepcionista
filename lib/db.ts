@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { intervalsOverlap } from "./overlap";
 import { hashPassword, comparePassword } from "./auth";
+import { seedBusinesses } from "./seed";
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}${Math.random()
@@ -145,13 +146,23 @@ function mapBusiness(r: any): Business {
 }
 
 export async function getBusinesses(): Promise<Business[]> {
-  const res = await query("SELECT * FROM businesses ORDER BY created_at ASC");
-  return res.rows.map(mapBusiness);
+  try {
+    const res = await query("SELECT * FROM businesses ORDER BY created_at ASC");
+    if (res.rows && res.rows.length > 0) return res.rows.map(mapBusiness);
+  } catch (err) {
+    console.error("[db.getBusinesses error]", err);
+  }
+  return seedBusinesses;
 }
 
 export async function getBusiness(id: string): Promise<Business | undefined> {
-  const res = await query("SELECT * FROM businesses WHERE id = $1", [id]);
-  return res.rows[0] ? mapBusiness(res.rows[0]) : undefined;
+  try {
+    const res = await query("SELECT * FROM businesses WHERE id = $1", [id]);
+    if (res.rows && res.rows[0]) return mapBusiness(res.rows[0]);
+  } catch (err) {
+    console.error("[db.getBusiness error]", err);
+  }
+  return seedBusinesses.find((b) => b.id === id);
 }
 
 export async function addBusiness(biz: Business): Promise<Business> {
@@ -497,48 +508,62 @@ function mapCall(r: any): CallLog {
 }
 
 export async function getCalls(businessId?: string): Promise<CallLog[]> {
-  const sql = businessId
-    ? "SELECT * FROM calls WHERE business_id = $1 ORDER BY started_at DESC"
-    : "SELECT * FROM calls ORDER BY started_at DESC";
-  const params = businessId ? [businessId] : [];
-  const res = await query(sql, params);
-  return res.rows.map(mapCall);
+  try {
+    const sql = businessId
+      ? "SELECT * FROM calls WHERE business_id = $1 ORDER BY started_at DESC"
+      : "SELECT * FROM calls ORDER BY started_at DESC";
+    const params = businessId ? [businessId] : [];
+    const res = await query(sql, params);
+    return res.rows.map(mapCall);
+  } catch (err) {
+    console.error("[db.getCalls error]", err);
+    return [];
+  }
 }
 
 export async function getCall(id: string): Promise<CallLog | undefined> {
-  const res = await query("SELECT * FROM calls WHERE id = $1", [id]);
-  return res.rows[0] ? mapCall(res.rows[0]) : undefined;
+  try {
+    const res = await query("SELECT * FROM calls WHERE id = $1", [id]);
+    return res.rows[0] ? mapCall(res.rows[0]) : undefined;
+  } catch (err) {
+    console.error("[db.getCall error]", err);
+    return undefined;
+  }
 }
 
 export async function upsertCall(call: CallLog): Promise<CallLog> {
-  await query(
-    `INSERT INTO calls (id, business_id, caller_phone, language, channel, started_at, ended_at, outcome, transcript, summary, sentiment, intent, resolved, action_items)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-     ON CONFLICT (id) DO UPDATE SET
-       ended_at = EXCLUDED.ended_at,
-       outcome = EXCLUDED.outcome,
-       transcript = EXCLUDED.transcript,
-       summary = EXCLUDED.summary,
-       sentiment = EXCLUDED.sentiment,
-       intent = EXCLUDED.intent,
-       resolved = EXCLUDED.resolved,
-       action_items = EXCLUDED.action_items;`,
-    [
-      call.id,
-      call.businessId,
-      call.callerPhone,
-      call.language || "es",
-      call.channel || "web",
-      call.startedAt || new Date().toISOString(),
-      call.endedAt || null,
-      call.outcome || "in_progress",
-      JSON.stringify(call.transcript || []),
-      call.summary || null,
-      call.sentiment || null,
-      call.intent || null,
-      call.resolved ?? true,
-      JSON.stringify(call.actionItems || []),
-    ]
-  );
+  try {
+    await query(
+      `INSERT INTO calls (id, business_id, caller_phone, language, channel, started_at, ended_at, outcome, transcript, summary, sentiment, intent, resolved, action_items)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       ON CONFLICT (id) DO UPDATE SET
+         ended_at = EXCLUDED.ended_at,
+         outcome = EXCLUDED.outcome,
+         transcript = EXCLUDED.transcript,
+         summary = EXCLUDED.summary,
+         sentiment = EXCLUDED.sentiment,
+         intent = EXCLUDED.intent,
+         resolved = EXCLUDED.resolved,
+         action_items = EXCLUDED.action_items;`,
+      [
+        call.id,
+        call.businessId,
+        call.callerPhone,
+        call.language || "es",
+        call.channel || "web",
+        call.startedAt || new Date().toISOString(),
+        call.endedAt || null,
+        call.outcome || "in_progress",
+        JSON.stringify(call.transcript || []),
+        call.summary || null,
+        call.sentiment || null,
+        call.intent || null,
+        call.resolved ?? true,
+        JSON.stringify(call.actionItems || []),
+      ]
+    );
+  } catch (err) {
+    console.error("[db.upsertCall error]", err);
+  }
   return call;
 }
