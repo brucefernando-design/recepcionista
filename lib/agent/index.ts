@@ -60,9 +60,15 @@ export async function runAgentTurn(
     try {
       response = await client.messages.create({
         model: MODEL,
-        max_tokens: 1024,
+        max_tokens: 300,
         thinking: { type: "disabled" },
-        system: systemPrompt,
+        system: [
+          {
+            type: "text",
+            text: systemPrompt,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
         tools: agentTools,
         messages,
       });
