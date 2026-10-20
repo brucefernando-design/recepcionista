@@ -104,7 +104,7 @@ export async function generateDigest(businessId?: string): Promise<Digest> {
     .join("\n");
 
   const response = await client.messages.create({
-    model: "claude-opus-4-8",
+    model: process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-20241022",
     max_tokens: 2048,
     output_config: {
       format: { type: "json_schema", schema: DIGEST_SCHEMA },

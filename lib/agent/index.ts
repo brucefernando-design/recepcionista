@@ -5,7 +5,7 @@ import { agentTools, executeTool, type ToolOutcome } from "./tools";
 
 const client = new Anthropic();
 
-const MODEL = "claude-opus-4-8";
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-20241022";
 
 // Live calls can't wait forever: cap the tool loop and the history window.
 const MAX_TOOL_ITERATIONS = 6;
