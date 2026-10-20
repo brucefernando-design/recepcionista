@@ -71,7 +71,7 @@ export default function DemoPage() {
   const { lang: globalLang } = useLanguage();
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [businessId, setBusinessId] = useState("biz_clinic");
-  const [lang, setLang] = useState(globalLang);
+  const [lang, setLang] = useState<string>(globalLang);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
