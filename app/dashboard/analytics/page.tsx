@@ -3,6 +3,7 @@
 import { Fragment, useState } from "react";
 import { useDashboardData } from "@/lib/useDashboardData";
 import type { Digest } from "@/lib/digest";
+import { useLanguage } from "@/components/LanguageContext";
 
 function Bar({
   label,
@@ -30,8 +31,34 @@ function Bar({
   );
 }
 
+const OUTCOME_LABELS: Record<string, { es: string; en: string }> = {
+  appointment_booked: { es: "Cita agendada", en: "Appointment booked" },
+  order_taken: { es: "Pedido tomado", en: "Order taken" },
+  faq_answered: { es: "FAQ respondida", en: "FAQ answered" },
+  transferred: { es: "Transferida", en: "Transferred" },
+  in_progress: { es: "En curso", en: "In progress" },
+  missed: { es: "Perdida", en: "Missed" },
+};
+
+const SENTIMENT_LABELS: Record<string, { es: string; en: string }> = {
+  positive: { es: "Positivo 😊", en: "Positive 😊" },
+  neutral: { es: "Neutral 😐", en: "Neutral 😐" },
+  negative: { es: "Insatisfecho 😠", en: "Negative 😠" },
+};
+
+const DAY_LABELS_ES: Record<string, string> = {
+  Sun: "Domingo",
+  Mon: "Lunes",
+  Tue: "Martes",
+  Wed: "Miércoles",
+  Thu: "Jueves",
+  Fri: "Viernes",
+  Sat: "Sábado",
+};
+
 export default function AnalyticsPage() {
   const { data } = useDashboardData();
+  const { lang } = useLanguage();
   const calls = data?.calls ?? [];
 
   const byIntent = countBy(calls.filter((c) => c.intent).map((c) => c.intent!));
@@ -40,16 +67,27 @@ export default function AnalyticsPage() {
     ? Math.round((analyzed.filter((c) => c.resolved).length / analyzed.length) * 100)
     : null;
 
-  const byOutcome = countBy(calls.map((c) => c.outcome.replace(/_/g, " ")));
-  const bySentiment = countBy(
+  const byOutcomeRaw = countBy(calls.map((c) => c.outcome));
+  const byOutcome: Record<string, number> = {};
+  for (const [k, v] of Object.entries(byOutcomeRaw)) {
+    const label = OUTCOME_LABELS[k]?.[lang] ?? k.replace(/_/g, " ");
+    byOutcome[label] = v;
+  }
+
+  const bySentimentRaw = countBy(
     calls.filter((c) => c.sentiment).map((c) => c.sentiment!)
   );
+  const bySentiment: Record<string, number> = {};
+  for (const [k, v] of Object.entries(bySentimentRaw)) {
+    const label = SENTIMENT_LABELS[k]?.[lang] ?? k;
+    bySentiment[label] = v;
+  }
+
   const byLanguage = countBy(calls.map((c) => c.language.toUpperCase()));
   const byHour = countBy(
     calls.map((c) => `${String(new Date(c.startedAt).getHours()).padStart(2, "0")}:00`)
   );
 
-  // Average call duration (only calls that ended)
   const durations = calls
     .filter((c) => c.endedAt)
     .map((c) => (new Date(c.endedAt!).getTime() - new Date(c.startedAt).getTime()) / 1000)
@@ -58,21 +96,21 @@ export default function AnalyticsPage() {
     ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
     : null;
 
-  // Calls outside 9–18 — the ones a human front desk would have missed.
   const afterHours = calls.filter((c) => {
     const h = new Date(c.startedAt).getHours();
     return h < 9 || h >= 18;
   }).length;
 
-  // Which weekday gets the most calls?
   const dayCounts = countBy(
     calls.map((c) =>
       new Date(c.startedAt).toLocaleDateString("en-US", { weekday: "short" })
     )
   );
-  const busiestDay = sortedEntries(dayCounts)[0]?.[0] ?? null;
+  const busiestDayKey = sortedEntries(dayCounts)[0]?.[0] ?? null;
+  const busiestDay = busiestDayKey
+    ? (lang === "es" ? (DAY_LABELS_ES[busiestDayKey] ?? busiestDayKey) : busiestDayKey)
+    : null;
 
-  // Order revenue per day (last 7 days with activity)
   const revenueByDay: Record<string, number> = {};
   for (const o of data?.orders ?? []) {
     const day = o.createdAt.slice(0, 10);
@@ -101,45 +139,49 @@ export default function AnalyticsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Analytics</h1>
+      <h1 className="text-2xl font-bold">{lang === "es" ? "Analíticas y Rendimiento" : "Analytics"}</h1>
       <p className="mt-1 text-sm text-slate-400">
-        What your phone line looks like when every call is data.
+        {lang === "es"
+          ? "Tu línea telefónica analizada en tiempo real mediante inteligencia artificial."
+          : "What your phone line looks like when every call is data."}
       </p>
 
       <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="card !p-5 text-center">
           <div className="text-3xl font-bold text-brand-400">{calls.length}</div>
-          <div className="mt-1 text-xs text-slate-400">total calls</div>
+          <div className="mt-1 text-xs text-slate-400">{lang === "es" ? "llamadas totales" : "total calls"}</div>
         </div>
         <div className="card !p-5 text-center">
           <div className="text-3xl font-bold text-emerald-400">{automationRate}%</div>
-          <div className="mt-1 text-xs text-slate-400">handled end-to-end by AIVA</div>
+          <div className="mt-1 text-xs text-slate-400">{lang === "es" ? "atendidas al 100% por AIVA" : "handled end-to-end by AIVA"}</div>
         </div>
         <div className="card !p-5 text-center">
           <div className="text-3xl font-bold text-amber-400">
             {Object.keys(byLanguage).length}
           </div>
-          <div className="mt-1 text-xs text-slate-400">languages spoken</div>
+          <div className="mt-1 text-xs text-slate-400">{lang === "es" ? "idiomas hablados" : "languages spoken"}</div>
         </div>
         <div className="card !p-5 text-center">
           <div className="text-3xl font-bold text-purple-400">
             {resolutionRate === null ? "—" : `${resolutionRate}%`}
           </div>
-          <div className="mt-1 text-xs text-slate-400">needs fully resolved by AI</div>
+          <div className="mt-1 text-xs text-slate-400">{lang === "es" ? "resueltas con éxito" : "needs fully resolved by AI"}</div>
         </div>
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
-        <ChartCard title="Call outcomes">
+        <ChartCard title={lang === "es" ? "Resultados de llamadas" : "Call outcomes"}>
           {sortedEntries(byOutcome).map(([k, v]) => (
             <Bar key={k} label={k} value={v} max={maxOf(byOutcome)} color="bg-brand-500" />
           ))}
         </ChartCard>
 
-        <ChartCard title="Caller sentiment">
+        <ChartCard title={lang === "es" ? "Sentimiento del cliente" : "Caller sentiment"}>
           {Object.keys(bySentiment).length === 0 && (
             <p className="text-sm text-slate-500">
-              Sentiment appears after calls are analyzed (end a demo call to try it).
+              {lang === "es"
+                ? "El sentimiento se calcula al finalizar la llamada (prueba en la demo)."
+                : "Sentiment appears after calls are analyzed (end a demo call to try it)."}
             </p>
           )}
           {sortedEntries(bySentiment).map(([k, v]) => (
@@ -147,10 +189,12 @@ export default function AnalyticsPage() {
           ))}
         </ChartCard>
 
-        <ChartCard title="Caller intents">
+        <ChartCard title={lang === "es" ? "Intenciones del cliente" : "Caller intents"}>
           {Object.keys(byIntent).length === 0 && (
             <p className="text-sm text-slate-500">
-              Intents appear once calls are analyzed.
+              {lang === "es"
+                ? "Las intenciones aparecen una vez que las llamadas son analizadas."
+                : "Intents appear once calls are analyzed."}
             </p>
           )}
           {sortedEntries(byIntent).map(([k, v]) => (
@@ -158,13 +202,13 @@ export default function AnalyticsPage() {
           ))}
         </ChartCard>
 
-        <ChartCard title="Languages">
+        <ChartCard title={lang === "es" ? "Idiomas" : "Languages"}>
           {sortedEntries(byLanguage).map(([k, v]) => (
             <Bar key={k} label={k} value={v} max={maxOf(byLanguage)} color="bg-sky-500" />
           ))}
         </ChartCard>
 
-        <ChartCard title="Calls by hour">
+        <ChartCard title={lang === "es" ? "Llamadas por hora del día" : "Calls by hour"}>
           {sortedEntries(byHour, true).map(([k, v]) => (
             <Bar key={k} label={k} value={v} max={maxOf(byHour)} color="bg-amber-500" />
           ))}
@@ -178,24 +222,24 @@ export default function AnalyticsPage() {
               ? "—"
               : `${Math.floor(avgDuration / 60)}m ${avgDuration % 60}s`}
           </div>
-          <div className="mt-1 text-xs text-slate-400">avg call duration</div>
+          <div className="mt-1 text-xs text-slate-400">{lang === "es" ? "duración promedio" : "avg call duration"}</div>
         </div>
         <div className="card !p-5 text-center">
           <div className="text-3xl font-bold text-rose-400">{afterHours}</div>
           <div className="mt-1 text-xs text-slate-400">
-            after-hours calls a human desk would miss
+            {lang === "es" ? "llamadas fuera de horario que un humano perdería" : "after-hours calls a human desk would miss"}
           </div>
         </div>
         <div className="card !p-5 text-center">
           <div className="text-3xl font-bold text-brand-300">
             {busiestDay ?? "—"}
           </div>
-          <div className="mt-1 text-xs text-slate-400">busiest weekday</div>
+          <div className="mt-1 text-xs text-slate-400">{lang === "es" ? "día con mayor volumen" : "busiest weekday"}</div>
         </div>
         <div className="card col-span-2 !p-5 lg:col-span-1">
-          <div className="mb-3 text-xs text-slate-400">order revenue by day</div>
+          <div className="mb-3 text-xs text-slate-400">{lang === "es" ? "ingresos de pedidos por día" : "order revenue by day"}</div>
           {revenueDays.length === 0 ? (
-            <p className="text-sm text-slate-500">No orders yet.</p>
+            <p className="text-sm text-slate-500">{lang === "es" ? "No hay pedidos registrados." : "No orders yet."}</p>
           ) : (
             <div className="flex h-20 items-end gap-2">
               {revenueDays.map(([day, v]) => (
@@ -212,18 +256,22 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      <Heatmap calls={calls} />
+      <Heatmap calls={calls} lang={lang} />
 
-      <AiReport />
+      <AiReport lang={lang} />
 
       <div className="card mt-6">
-        <h2 className="font-semibold">💡 Upsell radar</h2>
+        <h2 className="font-semibold">💡 {lang === "es" ? "Radar de ventas sugeridas (Upsell)" : "Upsell radar"}</h2>
         <p className="mt-1 text-xs text-slate-500">
-          Revenue opportunities AIVA spotted in real conversations.
+          {lang === "es"
+            ? "Oportunidades de ingresos adicionales que AIVA detectó en llamadas reales."
+            : "Revenue opportunities AIVA spotted in real conversations."}
         </p>
         {upsells.length === 0 ? (
           <p className="mt-3 text-sm text-slate-500">
-            Nothing spotted yet — opportunities appear here after calls are analyzed.
+            {lang === "es"
+              ? "Aún no se detectaron oportunidades — aparecerán aquí conforme se analicen las llamadas."
+              : "Nothing spotted yet — opportunities appear here after calls are analyzed."}
           </p>
         ) : (
           <ul className="mt-3 space-y-2 text-sm text-slate-300">
@@ -240,8 +288,10 @@ export default function AnalyticsPage() {
 }
 
 // When do calls actually come in? Weekday × hour grid.
-function Heatmap({ calls }: { calls: { startedAt: string }[] }) {
-  const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function Heatmap({ calls, lang }: { calls: { startedAt: string }[]; lang: "es" | "en" }) {
+  const DAYS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const DAYS_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  const DAYS = lang === "es" ? DAYS_ES : DAYS_EN;
   const HOURS = Array.from({ length: 14 }, (_, i) => i + 7); // 7:00–20:00
 
   const grid: number[][] = DAYS.map(() => HOURS.map(() => 0));
@@ -254,9 +304,11 @@ function Heatmap({ calls }: { calls: { startedAt: string }[] }) {
 
   return (
     <div className="card mt-6">
-      <h2 className="font-semibold">Call volume heatmap</h2>
+      <h2 className="font-semibold">{lang === "es" ? "Mapa de calor de llamadas" : "Call volume heatmap"}</h2>
       <p className="mt-1 text-xs text-slate-500">
-        Weekday × hour — spot the rushes a human desk drowns in.
+        {lang === "es"
+          ? "Día de la semana × hora — detecta las horas pico donde la recepción se satura."
+          : "Weekday × hour — spot the rushes a human desk drowns in."}
       </p>
       <div className="mt-4 overflow-x-auto">
         <div className="min-w-[560px]">
@@ -273,7 +325,7 @@ function Heatmap({ calls }: { calls: { startedAt: string }[] }) {
                   return (
                     <div
                       key={`${day}-${h}`}
-                      title={`${day} ${h}:00 — ${v} call${v === 1 ? "" : "s"}`}
+                      title={`${day} ${h}:00 — ${v} ${lang === "es" ? (v === 1 ? "llamada" : "llamadas") : (v === 1 ? "call" : "calls")}`}
                       className="aspect-square rounded-sm"
                       style={{
                         backgroundColor:
@@ -294,7 +346,7 @@ function Heatmap({ calls }: { calls: { startedAt: string }[] }) {
 }
 
 // Owner-level AI report: Claude reasons across every call at once.
-function AiReport() {
+function AiReport({ lang }: { lang: "es" | "en" }) {
   const [digest, setDigest] = useState<Digest | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -308,7 +360,7 @@ function AiReport() {
       if (!res.ok) throw new Error(data.error ?? "failed");
       setDigest(data as Digest);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Report generation failed");
+      setError(e instanceof Error ? e.message : (lang === "es" ? "Error al generar reporte" : "Report generation failed"));
     } finally {
       setLoading(false);
     }
@@ -318,10 +370,11 @@ function AiReport() {
     <div className="card mt-6 border-brand-500/30">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-semibold">🤖 AI business report</h2>
+          <h2 className="font-semibold">🤖 {lang === "es" ? "Reporte ejecutivo con IA" : "AI business report"}</h2>
           <p className="mt-1 text-xs text-slate-500">
-            Claude reasons across every call, booking and order — trends,
-            risks, and what to do about them.
+            {lang === "es"
+              ? "Claude analiza en conjunto cada llamada, cita y pedido — detectando tendencias, riesgos y recomendaciones."
+              : "Claude reasons across every call, booking and order — trends, risks, and what to do about them."}
           </p>
         </div>
         <button
@@ -329,7 +382,11 @@ function AiReport() {
           disabled={loading}
           className="btn-primary !px-4 !py-2 text-sm disabled:opacity-50"
         >
-          {loading ? "Analyzing all calls…" : digest ? "Regenerate" : "Generate report"}
+          {loading
+            ? (lang === "es" ? "Analizando llamadas…" : "Analyzing all calls…")
+            : digest
+            ? (lang === "es" ? "Regenerar reporte" : "Regenerate")
+            : (lang === "es" ? "Generar reporte" : "Generate report")}
         </button>
       </div>
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
@@ -339,39 +396,62 @@ function AiReport() {
             {digest.headline}
           </p>
           {digest.highlights.length > 0 && (
-            <ReportList title="Highlights" items={digest.highlights} icon="✦" tone="text-brand-300" />
+            <ReportList
+              title={lang === "es" ? "Puntos destacados" : "Highlights"}
+              items={digest.highlights}
+              icon="✦"
+              tone="text-brand-300"
+            />
           )}
           {digest.top_caller_needs.length > 0 && (
-            <ReportList title="What callers wanted" items={digest.top_caller_needs} icon="☎" tone="text-sky-300" />
+            <ReportList
+              title={lang === "es" ? "Lo que más pidieron los clientes" : "What callers wanted"}
+              items={digest.top_caller_needs}
+              icon="☎"
+              tone="text-sky-300"
+            />
           )}
           {digest.risks.length > 0 && (
-            <ReportList title="Risks" items={digest.risks} icon="⚠" tone="text-amber-300" />
+            <ReportList
+              title={lang === "es" ? "Riesgos detectados" : "Risks"}
+              items={digest.risks}
+              icon="⚠"
+              tone="text-amber-300"
+            />
           )}
           {digest.recommendations.length > 0 && (
-            <ReportList title="Recommendations" items={digest.recommendations} icon="→" tone="text-emerald-300" />
+            <ReportList
+              title={lang === "es" ? "Recomendaciones" : "Recommendations"}
+              items={digest.recommendations}
+              icon="→"
+              tone="text-emerald-300"
+            />
           )}
           <div className="flex items-center justify-between">
             <p className="text-xs text-slate-600">
-              Based on {digest.callsAnalyzed} calls ·{" "}
-              {new Date(digest.generatedAt).toLocaleString()}
+              {lang === "es" ? "Basado en" : "Based on"} {digest.callsAnalyzed} {lang === "es" ? "llamadas" : "calls"} ·{" "}
+              {new Date(digest.generatedAt).toLocaleString(lang === "es" ? "es-MX" : "en-US")}
             </p>
             <button
               onClick={() => {
                 const text = [
                   digest.headline,
                   "",
-                  "Highlights:", ...digest.highlights.map((h) => `• ${h}`),
+                  lang === "es" ? "Puntos destacados:" : "Highlights:",
+                  ...digest.highlights.map((h) => `• ${h}`),
                   "",
-                  "What callers wanted:", ...digest.top_caller_needs.map((h) => `• ${h}`),
-                  ...(digest.risks.length ? ["", "Risks:", ...digest.risks.map((h) => `• ${h}`)] : []),
+                  lang === "es" ? "Lo que más pidieron:" : "What callers wanted:",
+                  ...digest.top_caller_needs.map((h) => `• ${h}`),
+                  ...(digest.risks.length ? ["", lang === "es" ? "Riesgos:" : "Risks:", ...digest.risks.map((h) => `• ${h}`)] : []),
                   "",
-                  "Recommendations:", ...digest.recommendations.map((h) => `• ${h}`),
+                  lang === "es" ? "Recomendaciones:" : "Recommendations:",
+                  ...digest.recommendations.map((h) => `• ${h}`),
                 ].join("\n");
                 navigator.clipboard?.writeText(text);
               }}
               className="text-xs text-brand-400 hover:underline"
             >
-              📋 Copy report
+              📋 {lang === "es" ? "Copiar reporte" : "Copy report"}
             </button>
           </div>
         </div>

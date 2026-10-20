@@ -2,22 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLanguage } from "./LanguageContext";
 
-// Ctrl/Cmd-K jump menu for the dashboard.
-const COMMANDS: { label: string; href: string; icon: string }[] = [
-  { label: "Overview", href: "/dashboard", icon: "📊" },
-  { label: "Calls", href: "/dashboard/calls", icon: "📞" },
-  { label: "Appointments", href: "/dashboard/appointments", icon: "📅" },
-  { label: "Orders", href: "/dashboard/orders", icon: "🍽️" },
-  { label: "Action items", href: "/dashboard/tasks", icon: "✅" },
-  { label: "Analytics", href: "/dashboard/analytics", icon: "📈" },
-  { label: "Knowledge editor", href: "/dashboard/settings", icon: "🧠" },
-  { label: "Try the demo", href: "/demo", icon: "🎙️" },
-  { label: "Add a business", href: "/onboard", icon: "✨" },
+const COMMANDS: { es: string; en: string; href: string; icon: string }[] = [
+  { es: "Resumen general", en: "Overview", href: "/dashboard", icon: "📊" },
+  { es: "Llamadas", en: "Calls", href: "/dashboard/calls", icon: "📞" },
+  { es: "Citas", en: "Appointments", href: "/dashboard/appointments", icon: "📅" },
+  { es: "Pedidos", en: "Orders", href: "/dashboard/orders", icon: "🍽️" },
+  { es: "Tareas y seguimientos", en: "Action items", href: "/dashboard/tasks", icon: "✅" },
+  { es: "Analíticas", en: "Analytics", href: "/dashboard/analytics", icon: "📈" },
+  { es: "Editor de conocimiento", en: "Knowledge editor", href: "/dashboard/settings", icon: "🧠" },
+  { es: "Probar la demo", en: "Try the demo", href: "/demo", icon: "🎙️" },
+  { es: "Agregar un negocio", en: "Add a business", href: "/onboard", icon: "✨" },
 ];
 
 export default function CommandPalette() {
   const router = useRouter();
+  const { lang } = useLanguage();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -35,9 +36,10 @@ export default function CommandPalette() {
 
   if (!open) return null;
 
-  const matches = COMMANDS.filter((c) =>
-    c.label.toLowerCase().includes(query.toLowerCase())
-  );
+  const matches = COMMANDS.filter((c) => {
+    const label = c[lang] ?? c.en;
+    return label.toLowerCase().includes(query.toLowerCase());
+  });
 
   function go(href: string) {
     setOpen(false);
@@ -61,12 +63,14 @@ export default function CommandPalette() {
           onKeyDown={(e) => {
             if (e.key === "Enter" && matches[0]) go(matches[0].href);
           }}
-          placeholder="Jump to…"
+          placeholder={lang === "es" ? "Ir a…" : "Jump to…"}
           className="w-full border-b border-slate-800 bg-transparent px-4 py-3 text-sm outline-none"
         />
         <ul className="max-h-72 overflow-y-auto p-2">
           {matches.length === 0 && (
-            <li className="px-3 py-2 text-sm text-slate-500">No matches</li>
+            <li className="px-3 py-2 text-sm text-slate-500">
+              {lang === "es" ? "Sin resultados" : "No matches"}
+            </li>
           )}
           {matches.map((c) => (
             <li key={c.href}>
@@ -75,13 +79,15 @@ export default function CommandPalette() {
                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-white/5"
               >
                 <span>{c.icon}</span>
-                {c.label}
+                {c[lang] ?? c.en}
               </button>
             </li>
           ))}
         </ul>
         <div className="border-t border-slate-800 px-4 py-2 text-[11px] text-slate-600">
-          ⌘K / Ctrl-K to toggle · Enter to open · Esc to close
+          {lang === "es"
+            ? "⌘K / Ctrl-K para abrir · Enter para seleccionar · Esc para cerrar"
+            : "⌘K / Ctrl-K to toggle · Enter to open · Esc to close"}
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useDashboardData } from "@/lib/useDashboardData";
 import type { Appointment } from "@/lib/types";
+import { useLanguage } from "@/components/LanguageContext";
 
 const STATUS_COLORS: Record<string, string> = {
   confirmed: "bg-emerald-500/15 text-emerald-300",
@@ -11,8 +12,16 @@ const STATUS_COLORS: Record<string, string> = {
   no_show: "bg-orange-500/15 text-orange-300",
 };
 
+const STATUS_LABELS: Record<string, { es: string; en: string }> = {
+  confirmed: { es: "Confirmada", en: "Confirmed" },
+  cancelled: { es: "Cancelada", en: "Cancelled" },
+  completed: { es: "Completada", en: "Completed" },
+  no_show: { es: "No asistió", en: "No-show" },
+};
+
 export default function AppointmentsPage() {
   const { data } = useDashboardData();
+  const { lang } = useLanguage();
   const [overrides, setOverrides] = useState<Record<string, Appointment["status"]>>({});
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "upcoming" | "past">("upcoming");
 
@@ -26,10 +35,11 @@ export default function AppointmentsPage() {
   }
 
   async function reschedule(a: Appointment) {
-    const input = prompt(
-      `Reschedule ${a.customerName}'s ${a.serviceName}.\nEnter new date & time as "YYYY-MM-DD HH:mm":`,
-      `${a.date} ${a.time}`
-    );
+    const promptText =
+      lang === "es"
+        ? `Reagendar cita de ${a.customerName} para ${a.serviceName}.\nIngresa la nueva fecha y hora en formato "AAAA-MM-DD HH:mm":`
+        : `Reschedule ${a.customerName}'s ${a.serviceName}.\nEnter new date & time as "YYYY-MM-DD HH:mm":`;
+    const input = prompt(promptText, `${a.date} ${a.time}`);
     if (!input) return;
     const [date, time] = input.trim().split(/\s+/);
     const res = await fetch("/api/appointments", {
@@ -37,7 +47,9 @@ export default function AppointmentsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: a.id, date, time }),
     });
-    if (!res.ok) alert("Reschedule failed — check the date/time format.");
+    if (!res.ok) {
+      alert(lang === "es" ? "Error al reagendar — revisa el formato de fecha/hora." : "Reschedule failed — check the date/time format.");
+    }
   }
 
   const appts = (data?.appointments ?? [])
@@ -71,9 +83,9 @@ export default function AppointmentsPage() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Appointments</h1>
+          <h1 className="text-2xl font-bold">{lang === "es" ? "Citas y Reservaciones" : "Appointments"}</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Bookings made by AIVA on your behalf.
+            {lang === "es" ? "Reservas agendadas automáticamente por AIVA en tus llamadas." : "Bookings made by AIVA on your behalf."}
           </p>
         </div>
         <div className="flex gap-2">
@@ -82,17 +94,17 @@ export default function AppointmentsPage() {
             onChange={(e) => setDateFilter(e.target.value as typeof dateFilter)}
             className="rounded-xl border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm outline-none"
           >
-            <option value="upcoming">Upcoming</option>
-            <option value="today">Today</option>
-            <option value="past">Past</option>
-            <option value="all">All</option>
+            <option value="upcoming">{lang === "es" ? "Próximas" : "Upcoming"}</option>
+            <option value="today">{lang === "es" ? "Hoy" : "Today"}</option>
+            <option value="past">{lang === "es" ? "Pasadas" : "Past"}</option>
+            <option value="all">{lang === "es" ? "Todas" : "All"}</option>
           </select>
           <button
             onClick={exportCsv}
             disabled={appts.length === 0}
             className="btn-secondary !px-4 !py-2 text-sm disabled:opacity-40"
           >
-            ⬇ Export CSV
+            {lang === "es" ? "⬇ Exportar CSV" : "⬇ Export CSV"}
           </button>
         </div>
       </div>
@@ -101,20 +113,22 @@ export default function AppointmentsPage() {
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
             <tr className="border-b border-slate-800 text-xs uppercase text-slate-500">
-              <th className="py-3 pr-4">Customer</th>
-              <th className="py-3 pr-4">Service</th>
-              <th className="py-3 pr-4">Date</th>
-              <th className="py-3 pr-4">Time</th>
-              <th className="py-3 pr-4">Phone</th>
-              <th className="py-3 pr-4">Status</th>
-              <th className="py-3">Actions</th>
+              <th className="py-3 pr-4">{lang === "es" ? "Cliente" : "Customer"}</th>
+              <th className="py-3 pr-4">{lang === "es" ? "Servicio" : "Service"}</th>
+              <th className="py-3 pr-4">{lang === "es" ? "Fecha" : "Date"}</th>
+              <th className="py-3 pr-4">{lang === "es" ? "Hora" : "Time"}</th>
+              <th className="py-3 pr-4">{lang === "es" ? "Teléfono" : "Phone"}</th>
+              <th className="py-3 pr-4">{lang === "es" ? "Estado" : "Status"}</th>
+              <th className="py-3">{lang === "es" ? "Acciones" : "Actions"}</th>
             </tr>
           </thead>
           <tbody>
             {appts.length === 0 && (
               <tr>
                 <td colSpan={7} className="py-8 text-center text-slate-500">
-                  No appointments yet — book one through the demo!
+                  {lang === "es"
+                    ? "No hay citas en este filtro — agenda una llamando o en la demo."
+                    : "No appointments yet — book one through the demo!"}
                 </td>
               </tr>
             )}
@@ -125,7 +139,7 @@ export default function AppointmentsPage() {
                   {a.recurrence && (
                     <span
                       className="ml-1.5 text-brand-400"
-                      title={`Standing booking (${a.recurrence})`}
+                      title={lang === "es" ? `Cita recurrente (${a.recurrence})` : `Standing booking (${a.recurrence})`}
                     >
                       🔁
                     </span>
@@ -141,46 +155,46 @@ export default function AppointmentsPage() {
                       STATUS_COLORS[a.status] ?? ""
                     }`}
                   >
-                    {a.status}
+                    {STATUS_LABELS[a.status]?.[lang] ?? a.status}
                   </span>
                 </td>
                 <td className="py-3">
                   <div className="flex gap-2">
-                  <a
-                    href={`/api/appointments/${a.id}/ics`}
-                    className="rounded-lg border border-slate-600/60 px-2.5 py-1 text-xs text-slate-300 transition hover:bg-slate-700/40"
-                    title="Add to calendar (.ics)"
-                  >
-                    📅 .ics
-                  </a>
-                  {a.status === "confirmed" && (
-                    <>
-                      <button
-                        onClick={() => setStatus(a.id, "completed")}
-                        className="rounded-lg border border-emerald-500/30 px-2.5 py-1 text-xs text-emerald-300 transition hover:bg-emerald-500/15"
-                      >
-                        Complete
-                      </button>
-                      <button
-                        onClick={() => reschedule(a)}
-                        className="rounded-lg border border-sky-500/30 px-2.5 py-1 text-xs text-sky-300 transition hover:bg-sky-500/15"
-                      >
-                        Reschedule
-                      </button>
-                      <button
-                        onClick={() => setStatus(a.id, "no_show")}
-                        className="rounded-lg border border-orange-500/30 px-2.5 py-1 text-xs text-orange-300 transition hover:bg-orange-500/15"
-                      >
-                        No-show
-                      </button>
-                      <button
-                        onClick={() => setStatus(a.id, "cancelled")}
-                        className="rounded-lg border border-red-500/30 px-2.5 py-1 text-xs text-red-300 transition hover:bg-red-500/15"
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  )}
+                    <a
+                      href={`/api/appointments/${a.id}/ics`}
+                      className="rounded-lg border border-slate-600/60 px-2.5 py-1 text-xs text-slate-300 transition hover:bg-slate-700/40"
+                      title={lang === "es" ? "Agregar a calendario (.ics)" : "Add to calendar (.ics)"}
+                    >
+                      📅 .ics
+                    </a>
+                    {a.status === "confirmed" && (
+                      <>
+                        <button
+                          onClick={() => setStatus(a.id, "completed")}
+                          className="rounded-lg border border-emerald-500/30 px-2.5 py-1 text-xs text-emerald-300 transition hover:bg-emerald-500/15"
+                        >
+                          {lang === "es" ? "Completar" : "Complete"}
+                        </button>
+                        <button
+                          onClick={() => reschedule(a)}
+                          className="rounded-lg border border-sky-500/30 px-2.5 py-1 text-xs text-sky-300 transition hover:bg-sky-500/15"
+                        >
+                          {lang === "es" ? "Reagendar" : "Reschedule"}
+                        </button>
+                        <button
+                          onClick={() => setStatus(a.id, "no_show")}
+                          className="rounded-lg border border-orange-500/30 px-2.5 py-1 text-xs text-orange-300 transition hover:bg-orange-500/15"
+                        >
+                          {lang === "es" ? "No asistió" : "No-show"}
+                        </button>
+                        <button
+                          onClick={() => setStatus(a.id, "cancelled")}
+                          className="rounded-lg border border-red-500/30 px-2.5 py-1 text-xs text-red-300 transition hover:bg-red-500/15"
+                        >
+                          {lang === "es" ? "Cancelar" : "Cancel"}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

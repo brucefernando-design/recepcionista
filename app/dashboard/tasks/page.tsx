@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ActionItem, WaitlistEntry } from "@/lib/types";
+import { useLanguage } from "@/components/LanguageContext";
 
 const WAIT_COLORS: Record<string, string> = {
   waiting: "bg-amber-500/15 text-amber-300",
@@ -10,7 +11,15 @@ const WAIT_COLORS: Record<string, string> = {
   expired: "bg-slate-500/15 text-slate-400",
 };
 
+const WAIT_LABELS: Record<string, { es: string; en: string }> = {
+  waiting: { es: "En espera", en: "Waiting" },
+  notified: { es: "Notificado", en: "Notified" },
+  booked: { es: "Agendado", en: "Booked" },
+  expired: { es: "Expirado", en: "Expired" },
+};
+
 export default function TasksPage() {
+  const { lang } = useLanguage();
   const [tasks, setTasks] = useState<ActionItem[]>([]);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
 
@@ -47,25 +56,28 @@ export default function TasksPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Action items</h1>
+      <h1 className="text-2xl font-bold">{lang === "es" ? "Tareas y Seguimientos" : "Action items"}</h1>
       <p className="mt-1 text-sm text-slate-400">
-        Follow-ups AIVA captured for your team — callbacks, special requests,
-        anything it couldn&apos;t finish on the call.
+        {lang === "es"
+          ? "Pendientes que AIVA registró para tu equipo — llamadas de vuelta, peticiones especiales y solicitudes pendientes."
+          : "Follow-ups AIVA captured for your team — callbacks, special requests, anything it couldn't finish on the call."}
       </p>
 
       <div className="mt-6 space-y-3">
         {tasks.length === 0 && (
           <div className="card text-sm text-slate-400">
-            Nothing here yet. Ask AIVA for a callback in the demo and watch this
-            list fill up.
+            {lang === "es"
+              ? "No hay tareas pendientes en este momento. Cuando un cliente pida que le regresen la llamada, aparecerá aquí."
+              : "Nothing here yet. Ask AIVA for a callback in the demo and watch this list fill up."}
           </div>
         )}
         {waitlist.length > 0 && (
           <div className="card">
-            <h2 className="font-semibold">⏳ Waitlist</h2>
+            <h2 className="font-semibold">⏳ {lang === "es" ? "Lista de espera" : "Waitlist"}</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Callers waiting for a slot to open. AIVA texts them automatically
-              when a cancellation frees one.
+              {lang === "es"
+                ? "Clientes esperando que se libere un horario. AIVA les envía un SMS automático si alguien cancela."
+                : "Callers waiting for a slot to open. AIVA texts them automatically when a cancellation frees one."}
             </p>
             <ul className="mt-3 space-y-2 text-sm">
               {waitlist
@@ -79,7 +91,7 @@ export default function TasksPage() {
                     <span>
                       <span className="font-medium">{w.customerName}</span>
                       <span className="text-slate-400">
-                        {" "}· {w.serviceName} · wants {w.date} · {w.customerPhone}
+                        {" "}· {w.serviceName} · {lang === "es" ? "desea" : "wants"} {w.date} · {w.customerPhone}
                       </span>
                     </span>
                     <span
@@ -87,7 +99,7 @@ export default function TasksPage() {
                         WAIT_COLORS[w.status] ?? ""
                       }`}
                     >
-                      {w.status}
+                      {WAIT_LABELS[w.status]?.[lang] ?? w.status}
                     </span>
                   </li>
                 ))}
@@ -113,7 +125,7 @@ export default function TasksPage() {
               </div>
               <div className="mt-1 text-xs text-slate-500">
                 {t.customerPhone ? `${t.customerPhone} · ` : ""}
-                {new Date(t.createdAt).toLocaleString()}
+                {new Date(t.createdAt).toLocaleString(lang === "es" ? "es-MX" : "en-US")}
               </div>
             </div>
           </label>

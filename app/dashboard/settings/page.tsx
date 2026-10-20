@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import type { Business } from "@/lib/types";
 import type { FaqSuggestion } from "@/lib/faqSuggest";
+import { useLanguage } from "@/components/LanguageContext";
 
 export default function SettingsPage() {
+  const { lang } = useLanguage();
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [selected, setSelected] = useState<Business | null>(null);
   const [saving, setSaving] = useState(false);
@@ -25,10 +27,14 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error(data.error ?? "failed");
       setSuggestions(data.suggestions);
       if (data.suggestions.length === 0) {
-        setSuggestNote("No gaps found — your FAQs cover what callers ask. 🎉");
+        setSuggestNote(
+          lang === "es"
+            ? "No se detectaron preguntas faltantes — tus preguntas frecuentes cubren todo lo que piden los clientes. 🎉"
+            : "No gaps found — your FAQs cover what callers ask. 🎉"
+        );
       }
     } catch (e) {
-      setSuggestNote(e instanceof Error ? e.message : "Suggestion failed");
+      setSuggestNote(e instanceof Error ? e.message : (lang === "es" ? "Error al buscar preguntas" : "Suggestion failed"));
     } finally {
       setSuggesting(false);
     }
@@ -81,16 +87,18 @@ export default function SettingsPage() {
   }
 
   if (!selected) {
-    return <div className="text-sm text-slate-400">Loading…</div>;
+    return <div className="text-sm text-slate-400">{lang === "es" ? "Cargando conocimiento…" : "Loading…"}</div>;
   }
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Knowledge</h1>
+          <h1 className="text-2xl font-bold">{lang === "es" ? "Conocimiento y Configuración" : "Knowledge"}</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Teach AIVA live — changes apply to the very next call.
+            {lang === "es"
+              ? "Entrena a AIVA en vivo — los cambios aplican automáticamente en la siguiente llamada."
+              : "Teach AIVA live — changes apply to the very next call."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -110,12 +118,15 @@ export default function SettingsPage() {
           <a
             href={`/api/businesses/${selected.id}/export`}
             className="btn-secondary !px-3 !py-2 text-xs"
-            title="Download this configuration as JSON"
+            title={lang === "es" ? "Descargar esta configuración como JSON" : "Download this configuration as JSON"}
           >
-            ⬇ Export
+            {lang === "es" ? "⬇ Exportar" : "⬇ Export"}
           </a>
-          <label className="btn-secondary cursor-pointer !px-3 !py-2 text-xs" title="Import a config JSON as a new business">
-            ⬆ Import
+          <label
+            className="btn-secondary cursor-pointer !px-3 !py-2 text-xs"
+            title={lang === "es" ? "Importar un archivo JSON como nuevo negocio" : "Import a config JSON as a new business"}
+          >
+            {lang === "es" ? "⬆ Importar" : "⬆ Import"}
             <input
               type="file"
               accept="application/json"
@@ -135,7 +146,7 @@ export default function SettingsPage() {
                   setBusinesses((bs) => [...bs, created]);
                   setSelected(created);
                 } catch (err) {
-                  alert(err instanceof Error ? err.message : "Import failed");
+                  alert(err instanceof Error ? err.message : (lang === "es" ? "Error al importar" : "Import failed"));
                 } finally {
                   e.target.value = "";
                 }
@@ -146,14 +157,14 @@ export default function SettingsPage() {
       </div>
 
       <div className="card mt-6">
-        <h2 className="font-semibold">Basics</h2>
+        <h2 className="font-semibold">{lang === "es" ? "Datos básicos del negocio" : "Basics"}</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="Business name" value={selected.name} onChange={(v) => update({ name: v })} />
-          <Field label="Hours" value={selected.hours} onChange={(v) => update({ hours: v })} />
-          <Field label="Phone" value={selected.phone} onChange={(v) => update({ phone: v })} />
-          <Field label="Address" value={selected.address} onChange={(v) => update({ address: v })} />
+          <Field label={lang === "es" ? "Nombre del negocio" : "Business name"} value={selected.name} onChange={(v) => update({ name: v })} />
+          <Field label={lang === "es" ? "Horario de atención" : "Hours"} value={selected.hours} onChange={(v) => update({ hours: v })} />
+          <Field label={lang === "es" ? "Teléfono principal" : "Phone"} value={selected.phone} onChange={(v) => update({ phone: v })} />
+          <Field label={lang === "es" ? "Dirección física" : "Address"} value={selected.address} onChange={(v) => update({ address: v })} />
           <Field
-            label="Staff transfer number (optional)"
+            label={lang === "es" ? "Teléfono de desvío a personal / humano (opcional)" : "Staff transfer number (optional)"}
             value={selected.staffPhone ?? ""}
             onChange={(v) => update({ staffPhone: v || undefined })}
           />
@@ -161,36 +172,41 @@ export default function SettingsPage() {
       </div>
 
       <div className="card mt-6">
-        <h2 className="font-semibold">Voice &amp; announcements</h2>
+        <h2 className="font-semibold">{lang === "es" ? "Voz, Saludos y Avisos" : "Voice & announcements"}</h2>
         <div className="mt-4 space-y-4">
           <label className="block text-sm">
             <span className="text-slate-400">
-              Custom greeting (optional — use {"{name}"} for the business name)
+              {lang === "es"
+                ? "Saludo personalizado (opcional — usa {name} para el nombre del negocio)"
+                : "Custom greeting (optional — use {name} for the business name)"}
             </span>
             <input
               value={selected.greeting ?? ""}
               onChange={(e) => update({ greeting: e.target.value || undefined })}
-              placeholder={`Thank you for calling ${selected.name}. This is AIVA…`}
+              placeholder={lang === "es" ? `Gracias por llamar a ${selected.name}. Mi nombre es AIVA, ¿en qué puedo ayudarte hoy?` : `Thank you for calling ${selected.name}. This is AIVA…`}
               className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
             />
           </label>
           <label className="block text-sm">
             <span className="text-slate-400">
-              Announcement — read to every caller while set
+              {lang === "es"
+                ? "Anuncio especial — se leerá a cada cliente al inicio de la llamada mientras esté activo"
+                : "Announcement — read to every caller while set"}
             </span>
             <input
               value={selected.announcement ?? ""}
               onChange={(e) =>
                 update({ announcement: e.target.value || undefined })
               }
-              placeholder="We close at 3 PM this Friday for staff training."
+              placeholder={lang === "es" ? "Cerramos a las 3 PM este viernes por capacitación del personal." : "We close at 3 PM this Friday for staff training."}
               className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
             />
           </label>
           <label className="block text-sm">
             <span className="text-slate-400">
-              Outbound webhook URL — AIVA POSTs booking/order/callback events here
-              (Zapier, n8n, your backend)
+              {lang === "es"
+                ? "URL de Webhook saliente — AIVA enviará eventos de reservas/pedidos aquí (Zapier, Make, n8n, tu backend)"
+                : "Outbound webhook URL — AIVA POSTs booking/order/callback events here (Zapier, n8n, your backend)"}
             </span>
             <input
               value={selected.webhookUrl ?? ""}
@@ -201,7 +217,9 @@ export default function SettingsPage() {
           </label>
           <label className="block text-sm">
             <span className="text-slate-400">
-              Holiday closures — comma-separated dates (YYYY-MM-DD), never bookable
+              {lang === "es"
+                ? "Cierres por días festivos — fechas separadas por coma (AAAA-MM-DD), nunca agendables"
+                : "Holiday closures — comma-separated dates (YYYY-MM-DD), never bookable"}
             </span>
             <input
               value={(selected.holidays ?? []).join(", ")}
@@ -221,7 +239,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="card mt-6">
-        <h2 className="font-semibold">Languages AIVA answers in</h2>
+        <h2 className="font-semibold">{lang === "es" ? "Idiomas en los que responde AIVA" : "Languages AIVA answers in"}</h2>
         <div className="mt-4 flex flex-wrap gap-2">
           {["en", "hi", "es", "fr", "de", "it", "pt", "ja"].map((code) => {
             const active = selected.languages.includes(code);
@@ -250,19 +268,19 @@ export default function SettingsPage() {
 
       <div className="card mt-6">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Services</h2>
+          <h2 className="font-semibold">{lang === "es" ? "Servicios" : "Services"}</h2>
           <button
             className="text-sm text-brand-400 hover:underline"
             onClick={() =>
               update({
                 services: [
                   ...selected.services,
-                  { id: `svc_${Date.now()}`, name: "New service", durationMinutes: 30, price: 0 },
+                  { id: `svc_${Date.now()}`, name: lang === "es" ? "Nuevo servicio" : "New service", durationMinutes: 30, price: 0 },
                 ],
               })
             }
           >
-            + Add service
+            {lang === "es" ? "+ Agregar servicio" : "+ Add service"}
           </button>
         </div>
         <div className="mt-4 space-y-3">
@@ -270,6 +288,7 @@ export default function SettingsPage() {
             <div key={s.id} className="flex flex-wrap items-center gap-3">
               <input
                 value={s.name}
+                placeholder={lang === "es" ? "Nombre del servicio" : "Service name"}
                 onChange={(e) => {
                   const services = [...selected.services];
                   services[i] = { ...s, name: e.target.value };
@@ -277,34 +296,40 @@ export default function SettingsPage() {
                 }}
                 className="min-w-40 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
               />
-              <input
-                type="number"
-                value={s.durationMinutes}
-                onChange={(e) => {
-                  const services = [...selected.services];
-                  services[i] = { ...s, durationMinutes: Number(e.target.value) };
-                  update({ services });
-                }}
-                className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                title="Duration (min)"
-              />
-              <input
-                type="number"
-                value={s.price}
-                onChange={(e) => {
-                  const services = [...selected.services];
-                  services[i] = { ...s, price: Number(e.target.value) };
-                  update({ services });
-                }}
-                className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                title="Price"
-              />
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  value={s.durationMinutes}
+                  onChange={(e) => {
+                    const services = [...selected.services];
+                    services[i] = { ...s, durationMinutes: Number(e.target.value) };
+                    update({ services });
+                  }}
+                  className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                  title={lang === "es" ? "Duración (minutos)" : "Duration (min)"}
+                />
+                <span className="text-xs text-slate-500">min</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-slate-500">$</span>
+                <input
+                  type="number"
+                  value={s.price}
+                  onChange={(e) => {
+                    const services = [...selected.services];
+                    services[i] = { ...s, price: Number(e.target.value) };
+                    update({ services });
+                  }}
+                  className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                  title={lang === "es" ? "Precio" : "Price"}
+                />
+              </div>
               <button
                 className="text-slate-500 hover:text-red-400"
                 onClick={() =>
                   update({ services: selected.services.filter((x) => x.id !== s.id) })
                 }
-                title="Remove"
+                title={lang === "es" ? "Eliminar servicio" : "Remove"}
               >
                 ✕
               </button>
@@ -316,7 +341,7 @@ export default function SettingsPage() {
       {selected.menu && (
         <div className="card mt-6">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Menu</h2>
+            <h2 className="font-semibold">{lang === "es" ? "Menú de productos" : "Menu"}</h2>
             <button
               className="text-sm text-brand-400 hover:underline"
               onClick={() =>
@@ -325,17 +350,17 @@ export default function SettingsPage() {
                     ...(selected.menu ?? []),
                     {
                       id: `m_${Date.now()}`,
-                      name: "New item",
+                      name: lang === "es" ? "Nuevo producto" : "New item",
                       description: "",
                       price: 0,
-                      category: "Mains",
+                      category: lang === "es" ? "Principales" : "Mains",
                       available: true,
                     },
                   ],
                 })
               }
             >
-              + Add item
+              {lang === "es" ? "+ Agregar producto" : "+ Add item"}
             </button>
           </div>
           <div className="mt-4 space-y-3">
@@ -343,6 +368,7 @@ export default function SettingsPage() {
               <div key={m.id} className="flex flex-wrap items-center gap-3">
                 <input
                   value={m.name}
+                  placeholder={lang === "es" ? "Nombre del producto" : "Item name"}
                   onChange={(e) => {
                     const menu = [...selected.menu!];
                     menu[i] = { ...m, name: e.target.value };
@@ -350,17 +376,20 @@ export default function SettingsPage() {
                   }}
                   className="min-w-40 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
                 />
-                <input
-                  type="number"
-                  value={m.price}
-                  onChange={(e) => {
-                    const menu = [...selected.menu!];
-                    menu[i] = { ...m, price: Number(e.target.value) };
-                    update({ menu });
-                  }}
-                  className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                  title="Price"
-                />
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-slate-500">$</span>
+                  <input
+                    type="number"
+                    value={m.price}
+                    onChange={(e) => {
+                      const menu = [...selected.menu!];
+                      menu[i] = { ...m, price: Number(e.target.value) };
+                      update({ menu });
+                    }}
+                    className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                    title={lang === "es" ? "Precio" : "Price"}
+                  />
+                </div>
                 <button
                   onClick={() => {
                     const menu = [...selected.menu!];
@@ -372,16 +401,16 @@ export default function SettingsPage() {
                       ? "border-emerald-500/40 text-emerald-300"
                       : "border-slate-600 text-slate-500"
                   }`}
-                  title="Toggle availability — 86'd items are refused on calls"
+                  title={lang === "es" ? "Alternar disponibilidad — productos agotados no se aceptan en llamadas" : "Toggle availability — 86'd items are refused on calls"}
                 >
-                  {m.available ? "available" : "86'd"}
+                  {m.available ? (lang === "es" ? "Disponible" : "available") : (lang === "es" ? "Agotado" : "86'd")}
                 </button>
                 <button
                   className="text-slate-500 hover:text-red-400"
                   onClick={() =>
                     update({ menu: selected.menu!.filter((x) => x.id !== m.id) })
                   }
-                  title="Remove"
+                  title={lang === "es" ? "Eliminar producto" : "Remove"}
                 >
                   ✕
                 </button>
@@ -393,19 +422,19 @@ export default function SettingsPage() {
 
       <div className="card mt-6">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">FAQs</h2>
+          <h2 className="font-semibold">{lang === "es" ? "Preguntas frecuentes (FAQs)" : "FAQs"}</h2>
           <button
             className="text-sm text-brand-400 hover:underline"
             onClick={() =>
               update({
                 faqs: [
                   ...selected.faqs,
-                  { id: `f_${Date.now()}`, question: "New question?", answer: "" },
+                  { id: `f_${Date.now()}`, question: lang === "es" ? "¿Nueva pregunta?" : "New question?", answer: "" },
                 ],
               })
             }
           >
-            + Add FAQ
+            {lang === "es" ? "+ Agregar pregunta" : "+ Add FAQ"}
           </button>
         </div>
         <div className="mt-4 space-y-4">
@@ -415,6 +444,7 @@ export default function SettingsPage() {
                 <div className="flex-1 space-y-2">
                   <input
                     value={f.question}
+                    placeholder={lang === "es" ? "¿Pregunta del cliente?" : "Question"}
                     onChange={(e) => {
                       const faqs = [...selected.faqs];
                       faqs[i] = { ...f, question: e.target.value };
@@ -424,6 +454,7 @@ export default function SettingsPage() {
                   />
                   <textarea
                     value={f.answer}
+                    placeholder={lang === "es" ? "Respuesta que dará la recepcionista…" : "Answer..."}
                     rows={2}
                     onChange={(e) => {
                       const faqs = [...selected.faqs];
@@ -438,7 +469,7 @@ export default function SettingsPage() {
                   onClick={() =>
                     update({ faqs: selected.faqs.filter((x) => x.id !== f.id) })
                   }
-                  title="Remove"
+                  title={lang === "es" ? "Eliminar pregunta" : "Remove"}
                 >
                   ✕
                 </button>
@@ -449,21 +480,23 @@ export default function SettingsPage() {
       </div>
 
       <div className="card mt-6 border-amber-500/30">
-        <h2 className="font-semibold">📢 Emergency broadcast</h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Text everyone with an appointment today — closures, delays, weather.
-          One message per customer.
+        <h2 className="font-semibold">📢 {lang === "es" ? "Difusión y Aviso de emergencia" : "Emergency broadcast"}</h2>
+        <p className="mt-1 text-xs text-slate-400">
+          {lang === "es"
+            ? "Envía un mensaje SMS a todos los clientes que tienen cita hoy o mañana — avisos de cierre, retrasos, imprevistos. Un mensaje por cliente."
+            : "Text everyone with an appointment today — closures, delays, weather. One message per customer."}
         </p>
-        <BroadcastForm businessId={selected.id} />
+        <BroadcastForm businessId={selected.id} lang={lang} />
       </div>
 
       <div className="card mt-6 border-brand-500/30">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-semibold">🧠 FAQs AIVA thinks you&apos;re missing</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Mined from real calls it couldn&apos;t fully answer. Accept to add —
-              then edit any [FILL IN] placeholders above.
+            <h2 className="font-semibold">🧠 {lang === "es" ? "Preguntas que faltan en tu base de conocimiento" : "FAQs AIVA thinks you're missing"}</h2>
+            <p className="mt-1 text-xs text-slate-400">
+              {lang === "es"
+                ? "Detectadas a partir de llamadas reales donde los clientes hicieron preguntas que aún no están registradas. Acéptalas para añadirlas."
+                : "Mined from real calls it couldn't fully answer. Accept to add — then edit any [FILL IN] placeholders above."}
             </p>
           </div>
           <button
@@ -471,7 +504,9 @@ export default function SettingsPage() {
             disabled={suggesting}
             className="btn-secondary !px-4 !py-2 text-sm disabled:opacity-50"
           >
-            {suggesting ? "Mining call history…" : "Find knowledge gaps"}
+            {suggesting
+              ? (lang === "es" ? "Analizando historial…" : "Mining call history…")
+              : (lang === "es" ? "Detectar preguntas faltantes" : "Find knowledge gaps")}
           </button>
         </div>
         {suggestNote && <p className="mt-3 text-sm text-slate-400">{suggestNote}</p>}
@@ -489,7 +524,7 @@ export default function SettingsPage() {
                     onClick={() => acceptSuggestion(s)}
                     className="btn-primary shrink-0 !px-3 !py-1.5 text-xs"
                   >
-                    + Accept
+                    {lang === "es" ? "+ Aceptar" : "+ Accept"}
                   </button>
                 </div>
               </div>
@@ -500,17 +535,19 @@ export default function SettingsPage() {
 
       <div className="sticky bottom-4 mt-6 flex items-center justify-end gap-3">
         {savedAt && Date.now() - savedAt < 4000 && (
-          <span className="text-sm text-emerald-400">Saved ✓</span>
+          <span className="text-sm text-emerald-400">{lang === "es" ? "Guardado ✓" : "Saved ✓"}</span>
         )}
         <button onClick={save} disabled={saving} className="btn-primary">
-          {saving ? "Saving…" : "Save changes"}
+          {saving
+            ? (lang === "es" ? "Guardando…" : "Saving…")
+            : (lang === "es" ? "Guardar cambios" : "Save changes")}
         </button>
       </div>
     </div>
   );
 }
 
-function BroadcastForm({ businessId }: { businessId: string }) {
+function BroadcastForm({ businessId, lang }: { businessId: string; lang: "es" | "en" }) {
   const [message, setMessage] = useState("");
   const [scope, setScope] = useState<"today" | "tomorrow" | "both">("today");
   const [busy, setBusy] = useState(false);
@@ -518,7 +555,11 @@ function BroadcastForm({ businessId }: { businessId: string }) {
 
   async function send() {
     if (!message.trim() || busy) return;
-    if (!confirm(`Text every customer with an appointment (${scope})?`)) return;
+    const confirmPrompt =
+      lang === "es"
+        ? `¿Enviar SMS a todos los clientes con cita (${scope === "today" ? "hoy" : scope === "tomorrow" ? "mañana" : "ambos días"})?`
+        : `Text every customer with an appointment (${scope})?`;
+    if (!confirm(confirmPrompt)) return;
     setBusy(true);
     setResult(null);
     try {
@@ -530,13 +571,13 @@ function BroadcastForm({ businessId }: { businessId: string }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "failed");
       setResult(
-        `Matched ${data.matched} customer${data.matched === 1 ? "" : "s"}, sent ${data.sent} SMS${
-          data.sent === 0 ? " (Twilio not configured?)" : ""
-        }.`
+        lang === "es"
+          ? `Se encontraron ${data.matched} cliente(s), se enviaron ${data.sent} SMS${data.sent === 0 ? " (¿Twilio no configurado?)" : ""}.`
+          : `Matched ${data.matched} customer${data.matched === 1 ? "" : "s"}, sent ${data.sent} SMS${data.sent === 0 ? " (Twilio not configured?)" : ""}.`
       );
       setMessage("");
     } catch (e) {
-      setResult(e instanceof Error ? e.message : "Broadcast failed");
+      setResult(e instanceof Error ? e.message : (lang === "es" ? "Error al enviar difusión" : "Broadcast failed"));
     } finally {
       setBusy(false);
     }
@@ -547,7 +588,7 @@ function BroadcastForm({ businessId }: { businessId: string }) {
       <input
         value={message}
         onChange={(e) => setMessage(e.target.value)}
-        placeholder="We're closing at 2 PM today due to a power outage."
+        placeholder={lang === "es" ? "Ej: Hoy cerramos a las 2 PM por mantenimiento eléctrico." : "We're closing at 2 PM today due to a power outage."}
         className="min-w-64 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
       />
       <select
@@ -555,16 +596,16 @@ function BroadcastForm({ businessId }: { businessId: string }) {
         onChange={(e) => setScope(e.target.value as typeof scope)}
         className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
       >
-        <option value="today">Today&apos;s appointments</option>
-        <option value="tomorrow">Tomorrow&apos;s</option>
-        <option value="both">Both days</option>
+        <option value="today">{lang === "es" ? "Citas de hoy" : "Today's appointments"}</option>
+        <option value="tomorrow">{lang === "es" ? "Citas de mañana" : "Tomorrow's"}</option>
+        <option value="both">{lang === "es" ? "Ambos días" : "Both days"}</option>
       </select>
       <button
         onClick={send}
         disabled={busy || !message.trim()}
         className="btn-secondary !border-amber-500/40 !px-4 !py-2 text-sm !text-amber-300 disabled:opacity-40"
       >
-        {busy ? "Sending…" : "Send broadcast"}
+        {busy ? (lang === "es" ? "Enviando…" : "Sending…") : (lang === "es" ? "Enviar aviso" : "Send broadcast")}
       </button>
       {result && <p className="w-full text-xs text-slate-400">{result}</p>}
     </div>

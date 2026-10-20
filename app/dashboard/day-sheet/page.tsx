@@ -1,10 +1,12 @@
 "use client";
 
 import { useDashboardData } from "@/lib/useDashboardData";
+import { useLanguage } from "@/components/LanguageContext";
 
 // A clean, printable day sheet for the front desk — hit Ctrl-P.
 export default function DaySheetPage() {
   const { data } = useDashboardData();
+  const { lang } = useLanguage();
   const today = new Date().toISOString().slice(0, 10);
 
   const appts = (data?.appointments ?? [])
@@ -22,9 +24,9 @@ export default function DaySheetPage() {
     <div>
       <div className="flex items-center justify-between print:hidden">
         <div>
-          <h1 className="text-2xl font-bold">Day sheet</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            {new Date().toLocaleDateString(undefined, {
+          <h1 className="text-2xl font-bold">{lang === "es" ? "Agenda del día" : "Day sheet"}</h1>
+          <p className="mt-1 text-sm text-slate-400 capitalize">
+            {new Date().toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
               weekday: "long",
               year: "numeric",
               month: "long",
@@ -33,29 +35,29 @@ export default function DaySheetPage() {
           </p>
         </div>
         <button onClick={() => window.print()} className="btn-secondary !px-4 !py-2 text-sm">
-          🖨 Print
+          🖨 {lang === "es" ? "Imprimir hoja" : "Print"}
         </button>
       </div>
 
       {/* Print header (hidden on screen) */}
       <div className="mb-6 hidden print:block">
-        <h1 className="text-2xl font-bold text-black">Day sheet — {today}</h1>
+        <h1 className="text-2xl font-bold text-black">{lang === "es" ? "Agenda del día" : "Day sheet"} — {today}</h1>
       </div>
 
       <section className="mt-6">
         <h2 className="mb-3 font-semibold">
-          Appointments ({appts.length})
+          {lang === "es" ? "Citas de hoy" : "Appointments"} ({appts.length})
         </h2>
         {appts.length === 0 ? (
-          <p className="text-sm text-slate-500">None scheduled today.</p>
+          <p className="text-sm text-slate-500">{lang === "es" ? "No hay citas programadas para hoy." : "None scheduled today."}</p>
         ) : (
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-700 text-xs uppercase text-slate-500 print:text-black">
-                <th className="py-2 pr-4">Time</th>
-                <th className="py-2 pr-4">Customer</th>
-                <th className="py-2 pr-4">Service</th>
-                <th className="py-2">Phone</th>
+                <th className="py-2 pr-4">{lang === "es" ? "Hora" : "Time"}</th>
+                <th className="py-2 pr-4">{lang === "es" ? "Cliente" : "Customer"}</th>
+                <th className="py-2 pr-4">{lang === "es" ? "Servicio" : "Service"}</th>
+                <th className="py-2">{lang === "es" ? "Teléfono" : "Phone"}</th>
               </tr>
             </thead>
             <tbody>
@@ -74,7 +76,7 @@ export default function DaySheetPage() {
 
       {orders.length > 0 && (
         <section className="mt-8">
-          <h2 className="mb-3 font-semibold">Open orders ({orders.length})</h2>
+          <h2 className="mb-3 font-semibold">{lang === "es" ? "Pedidos en preparación" : "Open orders"} ({orders.length})</h2>
           <ul className="space-y-2 text-sm">
             {orders.map((o) => (
               <li key={o.id} className="border-b border-slate-800 pb-2 print:border-slate-300">

@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useDashboardData } from "@/lib/useDashboardData";
 import { callDuration, relativeTime } from "@/lib/format";
+import { useLanguage } from "@/components/LanguageContext";
 
 // Inline staff note editor with debounced autosave.
-function StaffNote({ callId, initial }: { callId: string; initial?: string }) {
+function StaffNote({ callId, initial, lang }: { callId: string; initial?: string; lang: "es" | "en" }) {
   const [note, setNote] = useState(initial ?? "");
   const [saved, setSaved] = useState(false);
 
@@ -21,22 +22,21 @@ function StaffNote({ callId, initial }: { callId: string; initial?: string }) {
       setTimeout(() => setSaved(false), 2000);
     }, 800);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note]);
+  }, [note, callId, initial]);
 
   return (
     <div className="mb-4">
       <div className="mb-1 flex items-center justify-between">
         <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          Staff note
+          {lang === "es" ? "Nota interna del equipo" : "Staff note"}
         </label>
-        {saved && <span className="text-xs text-emerald-400">Saved ✓</span>}
+        {saved && <span className="text-xs text-emerald-400">{lang === "es" ? "Guardado ✓" : "Saved ✓"}</span>}
       </div>
       <textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
         rows={2}
-        placeholder="Add context for your team — autosaves as you type…"
+        placeholder={lang === "es" ? "Agrega contexto interno para tu equipo — se guarda automáticamente…" : "Add context for your team — autosaves as you type…"}
         className="w-full resize-none rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand-500"
       />
     </div>
@@ -52,8 +52,18 @@ const OUTCOME_COLORS: Record<string, string> = {
   missed: "bg-red-500/15 text-red-300",
 };
 
+const OUTCOME_LABELS: Record<string, { es: string; en: string }> = {
+  appointment_booked: { es: "Cita agendada", en: "Appointment booked" },
+  order_taken: { es: "Pedido tomado", en: "Order taken" },
+  faq_answered: { es: "Pregunta respondida", en: "FAQ answered" },
+  transferred: { es: "Transferida a humano", en: "Transferred" },
+  in_progress: { es: "En llamada", en: "In progress" },
+  missed: { es: "Perdida", en: "Missed" },
+};
+
 export default function CallsPage() {
   const { data } = useDashboardData();
+  const { lang } = useLanguage();
   const [openId, setOpenId] = useState<string | null>(null);
   const [outcomeFilter, setOutcomeFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -99,16 +109,16 @@ export default function CallsPage() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Calls</h1>
+          <h1 className="text-2xl font-bold">{lang === "es" ? "Llamadas" : "Calls"}</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Every conversation, fully transcribed.
+            {lang === "es" ? "Cada conversación transcrita y analizada en tiempo real." : "Every conversation, fully transcribed."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search transcripts…"
+            placeholder={lang === "es" ? "Buscar transcripciones…" : "Search transcripts…"}
             className="w-48 rounded-xl border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm outline-none focus:border-brand-500"
           />
           <select
@@ -116,10 +126,10 @@ export default function CallsPage() {
             onChange={(e) => setOutcomeFilter(e.target.value)}
             className="rounded-xl border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm outline-none"
           >
-            <option value="all">All outcomes</option>
+            <option value="all">{lang === "es" ? "Todos los resultados" : "All outcomes"}</option>
             {outcomes.map((o) => (
               <option key={o} value={o}>
-                {o.replace(/_/g, " ")}
+                {OUTCOME_LABELS[o]?.[lang] ?? o.replace(/_/g, " ")}
               </option>
             ))}
           </select>
@@ -128,14 +138,16 @@ export default function CallsPage() {
             disabled={calls.length === 0}
             className="btn-secondary !px-4 !py-2 text-sm disabled:opacity-40"
           >
-            ⬇ Export CSV
+            {lang === "es" ? "⬇ Exportar CSV" : "⬇ Export CSV"}
           </button>
         </div>
       </div>
 
       <div className="mt-6 space-y-3">
         {calls.length === 0 && (
-          <div className="card text-sm text-slate-400">No calls logged yet.</div>
+          <div className="card text-sm text-slate-400">
+            {lang === "es" ? "No hay llamadas registradas todavía." : "No calls logged yet."}
+          </div>
         )}
         {calls.map((c) => (
           <div key={c.id} className="card !p-0 overflow-hidden">
@@ -148,7 +160,7 @@ export default function CallsPage() {
                   {c.callerPhone}
                   {c.channel === "web" && (
                     <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
-                      web demo
+                      {lang === "es" ? "demo web" : "web demo"}
                     </span>
                   )}
                   {c.sentiment && (
@@ -167,7 +179,7 @@ export default function CallsPage() {
                   )}
                 </div>
                 <div className="text-xs text-slate-400">
-                  {relativeTime(c.startedAt)} · lang: {c.language}
+                  {relativeTime(c.startedAt)} · {lang === "es" ? "idioma" : "lang"}: {c.language}
                   {callDuration(c.startedAt, c.endedAt)
                     ? ` · ${callDuration(c.startedAt, c.endedAt)}`
                     : ""}
@@ -183,12 +195,12 @@ export default function CallsPage() {
                   OUTCOME_COLORS[c.outcome] ?? "bg-slate-800 text-slate-300"
                 }`}
               >
-                {c.outcome.replace(/_/g, " ")}
+                {OUTCOME_LABELS[c.outcome]?.[lang] ?? c.outcome.replace(/_/g, " ")}
               </span>
             </button>
             {openId === c.id && (
               <div className="border-t border-slate-800 px-5 py-4">
-                <StaffNote callId={c.id} initial={c.staffNote} />
+                <StaffNote callId={c.id} initial={c.staffNote} lang={lang} />
                 {(c.actionItems?.length || c.upsellOpportunity) && (
                   <div className="mb-4 space-y-2 rounded-xl bg-slate-800/40 p-3 text-xs">
                     {c.actionItems?.map((a, i) => (
@@ -200,7 +212,7 @@ export default function CallsPage() {
                   </div>
                 )}
                 {c.transcript.length === 0 ? (
-                  <p className="text-xs text-slate-500">No transcript.</p>
+                  <p className="text-xs text-slate-500">{lang === "es" ? "Sin transcripción disponible." : "No transcript."}</p>
                 ) : (
                   <div className="space-y-2">
                     {c.transcript.map((t, i) => (
@@ -212,7 +224,7 @@ export default function CallsPage() {
                               : "font-semibold text-slate-300"
                           }
                         >
-                          {t.role === "aiva" ? "AIVA" : "Caller"}:
+                          {t.role === "aiva" ? "AIVA" : (lang === "es" ? "Cliente" : "Caller")}:
                         </span>{" "}
                         <span className="text-slate-300">{t.text}</span>
                       </div>
