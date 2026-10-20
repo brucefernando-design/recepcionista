@@ -86,7 +86,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     console.error("chat error", err);
-    const msg = err instanceof Error ? `${err.message} [stack: ${err.stack}]` : String(err);
+    const key = process.env.ANTHROPIC_API_KEY || "";
+    const keyInfo = `key_len=${key.length},prefix=${key.slice(0, 10)},suffix=${key.slice(-4)},firstChar=${key[0]}`;
+    const msg = err instanceof Error ? `${err.message} [info: ${keyInfo}]` : String(err);
     return NextResponse.json(
       { reply: `Error: ${msg}`, events: [] },
       { status: 200 }
