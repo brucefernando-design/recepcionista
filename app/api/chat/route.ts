@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     console.error("chat error", err);
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = err instanceof Error ? `${err.message} [at: ${err.stack?.split("\n").slice(0, 3).join(" -> ")}]` : String(err);
     return NextResponse.json(
       { reply: `Error: ${msg}`, events: [] },
       { status: 200 }
