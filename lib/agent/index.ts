@@ -53,19 +53,16 @@ export async function runAgentTurn(
     { role: "user" as const, content: userMessage },
   ];
 
+  const systemPrompt = buildSystemPrompt(business, ctx);
+
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
     let response: Anthropic.Message;
     try {
       response = await client.messages.create({
         model: MODEL,
         max_tokens: 1024,
-        system: [
-          {
-            type: "text",
-            text: buildSystemPrompt(business, ctx),
-            cache_control: { type: "ephemeral" },
-          },
-        ],
+        thinking: { type: "disabled" },
+        system: systemPrompt,
         tools: agentTools,
         messages,
       });
@@ -101,7 +98,10 @@ export async function runAgentTurn(
     }
 
     if (response.stop_reason === "tool_use") {
-      messages.push({ role: "assistant", content: response.content });
+      const assistantBlocks = (response.content as any[]).filter(
+        (b) => b.type !== "thinking"
+      );
+      messages.push({ role: "assistant", content: assistantBlocks });
 
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const block of response.content) {
