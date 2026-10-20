@@ -39,6 +39,57 @@ export default function AdminPage() {
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // Twilio modal state
+  const [editingTwilioBiz, setEditingTwilioBiz] = useState<TenantInfo | null>(null);
+  const [twilioPhone, setTwilioPhone] = useState("");
+  const [twilioSid, setTwilioSid] = useState("");
+  const [twilioToken, setTwilioToken] = useState("");
+  const [staffPhone, setStaffPhone] = useState("");
+  const [businessPhone, setBusinessPhone] = useState("");
+  const [savingTwilio, setSavingTwilio] = useState(false);
+  const [twilioMsg, setTwilioMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  function openTwilioModal(t: TenantInfo) {
+    setEditingTwilioBiz(t);
+    setBusinessPhone(t.business.phone || "");
+    setTwilioPhone(t.business.twilioPhone || t.business.phone || "");
+    setTwilioSid(t.business.twilioSid || "");
+    setTwilioToken(t.business.twilioToken || "");
+    setStaffPhone(t.business.staffPhone || "");
+    setTwilioMsg(null);
+  }
+
+  async function handleSaveTwilio(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingTwilioBiz) return;
+    setSavingTwilio(true);
+    setTwilioMsg(null);
+    try {
+      const res = await fetch(`/api/admin/business/${editingTwilioBiz.business.id}/twilio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: businessPhone,
+          twilioPhone,
+          twilioSid,
+          twilioToken,
+          staffPhone,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTwilioMsg({ type: "success", text: "¡Twilio configurado con éxito para este negocio!" });
+        await loadStats();
+        setTimeout(() => setEditingTwilioBiz(null), 1200);
+      } else {
+        setTwilioMsg({ type: "error", text: data.error || "Error al guardar Twilio" });
+      }
+    } catch (err: any) {
+      setTwilioMsg({ type: "error", text: err.message || "Error al conectar" });
+    }
+    setSavingTwilio(false);
+  }
+
   const isSuper =
     user?.email?.toLowerCase().trim() === "bruce.fernando@hotmail.com" ||
     user?.role === "superadmin";
@@ -322,8 +373,19 @@ export default function AdminPage() {
                             <div className="text-slate-200">{t.user.name}</div>
                             <div className="text-xs text-slate-500">{t.user.email}</div>
                           </td>
-                          <td className="px-5 py-4 text-xs text-slate-400">
-                            {t.business.phone || "—"}
+                          <td className="px-5 py-4">
+                            <div className="text-xs font-mono text-slate-200">
+                              {t.business.twilioPhone || t.business.phone || "Sin número"}
+                            </div>
+                            {t.business.twilioSid ? (
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                                ⚡ Twilio propio
+                              </span>
+                            ) : (
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-slate-800 bg-slate-800/80 px-2 py-0.5 text-[10px] text-slate-400">
+                                🌐 Twilio global
+                              </span>
+                            )}
                           </td>
                           <td className="px-5 py-4 text-center font-medium text-slate-300">
                             {t.stats.callsCount}
@@ -333,6 +395,13 @@ export default function AdminPage() {
                           </td>
                           <td className="px-5 py-4 text-right">
                             <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => openTwilioModal(t)}
+                                className="rounded-lg border border-purple-500/40 bg-purple-500/10 px-2.5 py-1 text-xs font-medium text-purple-300 transition hover:bg-purple-500/20"
+                                title="Configurar número y cuenta de Twilio para este negocio"
+                              >
+                                ⚙️ Twilio
+                              </button>
                               <Link
                                 href={`/dashboard`}
                                 onClick={() => localStorage.setItem("aiva.businessFilter", t.business.id)}
@@ -608,6 +677,137 @@ export default function AdminPage() {
                   Cerrar
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Twilio Configuration */}
+        {editingTwilioBiz && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+            <div className="card w-full max-w-lg p-6 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white">
+                    Configurar Twilio y Telefonía
+                  </h3>
+                  <p className="text-xs text-brand-400 font-medium">
+                    Negocio: {editingTwilioBiz.business.name} ({editingTwilioBiz.user.name})
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditingTwilioBiz(null)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {twilioMsg && (
+                <div
+                  className={`mt-4 rounded-xl p-3 text-xs ${
+                    twilioMsg.type === "success"
+                      ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                      : "border border-red-500/30 bg-red-500/10 text-red-300"
+                  }`}
+                >
+                  {twilioMsg.text}
+                </div>
+              )}
+
+              <form onSubmit={handleSaveTwilio} className="mt-4 space-y-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase">
+                    Número de Twilio asignado (Entrantes)
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={twilioPhone}
+                    onChange={(e) => setTwilioPhone(e.target.value)}
+                    placeholder="+52 55 1234 5678"
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 font-mono"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Las llamadas recibidas a este número serán atendidas con los datos de este negocio.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3.5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-purple-300 uppercase">
+                      Cuenta de Twilio del amigo (Pago Propio)
+                    </span>
+                    <span className="text-[10px] text-slate-400">Opcional</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Si este amigo paga su propio saldo, ingresa sus claves. Si lo dejas vacío, usará la cuenta global.
+                  </p>
+                  <div>
+                    <label className="block text-[11px] text-slate-400">
+                      Twilio Account SID del amigo
+                    </label>
+                    <input
+                      type="text"
+                      value={twilioSid}
+                      onChange={(e) => setTwilioSid(e.target.value)}
+                      placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-white outline-none focus:border-brand-500 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-400">
+                      Twilio Auth Token del amigo
+                    </label>
+                    <input
+                      type="password"
+                      value={twilioToken}
+                      onChange={(e) => setTwilioToken(e.target.value)}
+                      placeholder="••••••••••••••••••••••••••••••••"
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-white outline-none focus:border-brand-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase">
+                    Teléfono personal / Desvío a humano
+                  </label>
+                  <input
+                    type="tel"
+                    value={staffPhone}
+                    onChange={(e) => setStaffPhone(e.target.value)}
+                    placeholder="+52 55 9876 5432"
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 font-mono"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    A dónde transferir la llamada cuando el cliente pida hablar con un encargado.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-xs text-slate-400">
+                  <div className="font-semibold text-slate-300">Webhook para este número en Twilio:</div>
+                  <div className="mt-1 rounded bg-black/50 p-2 font-mono text-[11px] text-brand-300 select-all break-all">
+                    https://recepcionista-zeta.vercel.app/api/voice/incoming?businessId={editingTwilioBiz.business.id}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingTwilioBiz(null)}
+                    className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-white/5"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingTwilio}
+                    className="btn-primary !px-5 !py-2 text-xs font-semibold"
+                  >
+                    {savingTwilio ? "Guardando..." : "Guardar Twilio"}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

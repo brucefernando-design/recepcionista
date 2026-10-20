@@ -1,11 +1,12 @@
 // SMS confirmations & reminders via Twilio. Degrades gracefully when Twilio
 // credentials aren't configured (returns false instead of throwing).
 import twilio from "twilio";
+import type { Business } from "./types";
 
-function getClient() {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!sid || !token || !process.env.TWILIO_PHONE_NUMBER) return null;
+function getClient(business?: Business) {
+  const sid = business?.twilioSid || process.env.TWILIO_ACCOUNT_SID;
+  const token = business?.twilioToken || process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return null;
   return twilio(sid, token);
 }
 
@@ -18,17 +19,26 @@ export function normalizePhone(raw: string): string {
   return `+${cleaned}`;
 }
 
-export async function sendSms(rawTo: string, body: string): Promise<boolean> {
+export async function sendSms(
+  rawTo: string,
+  body: string,
+  business?: Business
+): Promise<boolean> {
   const to = normalizePhone(rawTo);
-  const client = getClient();
-  if (!client) {
+  const client = getClient(business);
+  const fromNumber =
+    business?.twilioPhone ||
+    business?.phone ||
+    process.env.TWILIO_PHONE_NUMBER;
+
+  if (!client || !fromNumber) {
     console.log(`[sms skipped — no Twilio creds] to=${to}: ${body}`);
     return false;
   }
   try {
     await client.messages.create({
       to,
-      from: process.env.TWILIO_PHONE_NUMBER!,
+      from: fromNumber,
       body,
     });
     return true;

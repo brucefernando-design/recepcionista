@@ -258,6 +258,9 @@ function mapBusiness(r: any): Business {
     type: r.type,
     phone: r.phone,
     staffPhone: r.staff_phone || undefined,
+    twilioSid: r.twilio_sid || undefined,
+    twilioToken: r.twilio_token || undefined,
+    twilioPhone: r.twilio_phone || undefined,
     address: r.address || "",
     hours: r.hours || "",
     holidays: r.holidays || [],
@@ -294,8 +297,8 @@ export async function getBusiness(id: string): Promise<Business | undefined> {
 
 export async function addBusiness(biz: Business): Promise<Business> {
   await query(
-    `INSERT INTO businesses (id, name, type, phone, staff_phone, address, hours, languages, services, faqs, menu, rooms, holidays, announcement, greeting, webhook_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    `INSERT INTO businesses (id, name, type, phone, staff_phone, address, hours, languages, services, faqs, menu, rooms, holidays, announcement, greeting, webhook_url, twilio_sid, twilio_token, twilio_phone)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
        type = EXCLUDED.type,
@@ -311,7 +314,10 @@ export async function addBusiness(biz: Business): Promise<Business> {
        holidays = EXCLUDED.holidays,
        announcement = EXCLUDED.announcement,
        greeting = EXCLUDED.greeting,
-       webhook_url = EXCLUDED.webhook_url;`,
+       webhook_url = EXCLUDED.webhook_url,
+       twilio_sid = EXCLUDED.twilio_sid,
+       twilio_token = EXCLUDED.twilio_token,
+       twilio_phone = EXCLUDED.twilio_phone;`,
     [
       biz.id,
       biz.name,
@@ -329,6 +335,9 @@ export async function addBusiness(biz: Business): Promise<Business> {
       biz.announcement || null,
       biz.greeting || null,
       biz.webhookUrl || null,
+      biz.twilioSid || null,
+      biz.twilioToken || null,
+      biz.twilioPhone || null,
     ]
   );
   return biz;
@@ -336,6 +345,41 @@ export async function addBusiness(biz: Business): Promise<Business> {
 
 export async function updateBusiness(biz: Business): Promise<Business> {
   return addBusiness(biz);
+}
+
+export async function updateBusinessTwilio(
+  businessId: string,
+  data: {
+    phone?: string;
+    staffPhone?: string;
+    twilioSid?: string;
+    twilioToken?: string;
+    twilioPhone?: string;
+  }
+): Promise<boolean> {
+  try {
+    await query(
+      `UPDATE businesses SET
+         phone = COALESCE($1, phone),
+         staff_phone = $2,
+         twilio_sid = $3,
+         twilio_token = $4,
+         twilio_phone = $5
+       WHERE id = $6`,
+      [
+        data.phone || null,
+        data.staffPhone || null,
+        data.twilioSid || null,
+        data.twilioToken || null,
+        data.twilioPhone || null,
+        businessId,
+      ]
+    );
+    return true;
+  } catch (err) {
+    console.error("[db.updateBusinessTwilio error]", err);
+    return false;
+  }
 }
 
 // ---------------- Appointments ----------------

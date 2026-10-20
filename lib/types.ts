@@ -20,6 +20,10 @@ export interface Business {
   // Outbound webhook: AIVA POSTs booking/order/callback events here
   // (Zapier, n8n, Slack workflows, your own backend).
   webhookUrl?: string;
+  // Per-tenant Twilio configuration (allows each friend/client to pay their own telephony)
+  twilioSid?: string;
+  twilioToken?: string;
+  twilioPhone?: string;
   languages: string[];
   services: Service[];
   faqs: Faq[];

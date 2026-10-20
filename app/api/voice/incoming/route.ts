@@ -27,7 +27,13 @@ export async function POST(req: NextRequest) {
     const businesses = await getBusinesses();
     const business =
       (businessId ? businesses.find((b) => b.id === businessId) : null) ||
-      (to ? businesses.find((b) => b.phone && b.phone.replace(/\D/g, "") === to.replace(/\D/g, "")) : null) ||
+      (to
+        ? businesses.find(
+            (b) =>
+              (b.twilioPhone && b.twilioPhone.replace(/\D/g, "") === to.replace(/\D/g, "")) ||
+              (b.phone && b.phone.replace(/\D/g, "") === to.replace(/\D/g, ""))
+          )
+        : null) ||
       businesses[0];
 
     // Flood guard: a number hammering the line (robodialers, spam) gets a

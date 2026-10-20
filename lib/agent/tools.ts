@@ -329,7 +329,8 @@ export async function executeTool(
             date: appt.date,
             time: appt.time,
             ref: appt.id,
-          })
+          }),
+          business
         );
         emitWebhook(business, "appointment.booked", {
           id: appt.id,
@@ -450,7 +451,8 @@ export async function executeTool(
             total: order.total,
             type: order.type,
             etaMinutes: order.type === "delivery" ? 40 : 20,
-          })
+          }),
+          business
         );
         emitWebhook(business, "order.placed", {
           id: order.id,
@@ -516,7 +518,8 @@ export async function executeTool(
         }
         void sendSms(
           String(input.customer_phone),
-          `${business.name}: your ${recurrence} ${service?.name ?? input.service_name} at ${time} is set for: ${booked.join(", ")}.`
+          `${business.name}: your ${recurrence} ${service?.name ?? input.service_name} at ${time} is set for: ${booked.join(", ")}.`,
+          business
         );
         emitWebhook(business, "appointment.booked", {
           seriesId,
@@ -582,7 +585,8 @@ export async function executeTool(
         }
         void sendSms(
           appt.customerPhone,
-          `${business.name}: your ${appt.serviceName} on ${appt.date} at ${appt.time} has been cancelled. Call us anytime to rebook.`
+          `${business.name}: your ${appt.serviceName} on ${appt.date} at ${appt.time} has been cancelled. Call us anytime to rebook.`,
+          business
         );
         // A slot just opened — text the first caller waiting for that date.
         const waiting = await nextWaitingFor(business.id, appt.date);
@@ -590,7 +594,8 @@ export async function executeTool(
           await setWaitlistStatus(waiting.id, "notified");
           void sendSms(
             waiting.customerPhone,
-            `Good news from ${business.name}! A slot just opened on ${appt.date} at ${appt.time}. Call us to grab it — first come, first served.`
+            `Good news from ${business.name}! A slot just opened on ${appt.date} at ${appt.time}. Call us to grab it — first come, first served.`,
+            business
           );
         }
         emitWebhook(business, "appointment.cancelled", {
@@ -646,7 +651,8 @@ export async function executeTool(
         }
         void sendSms(
           moved.customerPhone,
-          `${business.name}: your ${moved.serviceName} has been moved to ${newDate} at ${newTime}. Ref ${moved.id}.`
+          `${business.name}: your ${moved.serviceName} has been moved to ${newDate} at ${newTime}. Ref ${moved.id}.`,
+          business
         );
         emitWebhook(business, "appointment.rescheduled", {
           id: moved.id,
