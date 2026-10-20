@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getActionItems, setActionItemDone } from "@/lib/db";
+import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const businessId = req.nextUrl.searchParams.get("businessId") ?? undefined;
+  const session = await getSession();
+  const requestedBizId = req.nextUrl.searchParams.get("businessId");
+  const businessId = session?.businessId || (requestedBizId ?? undefined);
   return NextResponse.json(await getActionItems(businessId));
 }
 

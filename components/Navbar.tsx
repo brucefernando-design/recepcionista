@@ -6,16 +6,17 @@ import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
 import LanguageToggle from "./LanguageToggle";
 import { useLanguage } from "./LanguageContext";
+import { useAuth } from "./AuthContext";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const { lang } = useLanguage();
+  const { user, business, logout } = useAuth();
 
   const links: [string, string][] = [
     ["/#features", lang === "es" ? "Características" : "Features"],
     ["/#industries", lang === "es" ? "Industrias" : "Industries"],
-    ["/onboard", lang === "es" ? "Configurar negocio" : "Add your business"],
     ["/dashboard", lang === "es" ? "Panel de control" : "Dashboard"],
   ];
 
@@ -53,6 +54,31 @@ export default function Navbar() {
         <div className="flex items-center gap-2.5">
           <LanguageToggle />
           <ThemeToggle />
+          {user ? (
+            <div className="hidden items-center gap-2 md:flex">
+              <Link
+                href="/dashboard"
+                className="flex items-center gap-1.5 rounded-xl border border-brand-500/30 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-300 transition hover:bg-brand-500/20"
+              >
+                <span>👤</span>
+                <span className="max-w-[120px] truncate">{business?.name || user.name}</span>
+              </Link>
+              <button
+                onClick={() => logout()}
+                className="rounded-xl border border-slate-700/80 px-2.5 py-1.5 text-xs text-slate-400 transition hover:bg-white/5 hover:text-white"
+                title={lang === "es" ? "Cerrar sesión" : "Log out"}
+              >
+                {lang === "es" ? "Salir" : "Exit"}
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="hidden rounded-xl border border-slate-700/80 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-slate-500 hover:text-white md:inline-flex"
+            >
+              {lang === "es" ? "Iniciar sesión" : "Log in"}
+            </Link>
+          )}
           <Link href="/demo" className="btn-primary !px-4 !py-2 text-sm">
             {lang === "es" ? "Probar demo" : "Try the demo"}
           </Link>
@@ -80,6 +106,27 @@ export default function Navbar() {
               {label}
             </Link>
           ))}
+          <div className="mt-2 border-t border-white/5 pt-2">
+            {user ? (
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  logout();
+                }}
+                className="block w-full text-left rounded-lg px-3 py-2.5 text-sm text-red-400 transition hover:bg-white/5"
+              >
+                {lang === "es" ? "Cerrar sesión" : "Log out"}
+              </button>
+            ) : (
+              <Link
+                href="/login"
+                onClick={() => setOpen(false)}
+                className="block rounded-lg px-3 py-2.5 text-sm text-brand-300 font-medium transition hover:bg-white/5"
+              >
+                {lang === "es" ? "Iniciar sesión / Registrarse" : "Log in / Register"}
+              </Link>
+            )}
+          </div>
         </nav>
       )}
     </header>
