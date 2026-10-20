@@ -69,7 +69,7 @@ export async function analyzeCall(
 
   try {
     const response = await client.messages.create({
-      model: process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-20241022",
+      model: process.env.ANTHROPIC_MODEL || "claude-3-haiku-20240307",
       max_tokens: 1024,
       output_config: {
         format: {
