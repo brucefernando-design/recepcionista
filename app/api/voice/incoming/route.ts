@@ -14,64 +14,76 @@ export const dynamic = "force-dynamic";
 // Configure your Twilio number's "A call comes in" to POST here:
 //   {NEXT_PUBLIC_APP_URL}/api/voice/incoming?businessId=biz_clinic
 export async function POST(req: NextRequest) {
-  const form = await req.formData();
-  if (!isValidTwilioRequest(req, form)) {
-    return new NextResponse("invalid signature", { status: 403 });
-  }
-  const callSid = String(form.get("CallSid") ?? newId("call"));
-  const from = String(form.get("From") ?? "unknown");
-
-  const businessId =
-    req.nextUrl.searchParams.get("businessId") ?? "biz_clinic";
-  const businesses = await getBusinesses();
-  const business =
-    businesses.find((b) => b.id === businessId) ?? businesses[0];
-
-  // Flood guard: a number hammering the line (robodialers, spam) gets a
-  // polite brush-off instead of burning model tokens. 6 calls / 10 min.
-  if (from !== "unknown") {
-    const rl = rateLimit(`voice:${from}`, 6, 600_000);
-    if (!rl.ok) {
-      return new NextResponse(
-        sayAndHangup(
-          "You've reached us several times in the last few minutes. Please try again a little later. Goodbye.",
-          "en"
-        ),
-        { headers: xmlHeaders() }
-      );
+  try {
+    const form = await req.formData();
+    if (!isValidTwilioRequest(req, form)) {
+      return new NextResponse("invalid signature", { status: 403 });
     }
+    const callSid = String(form.get("CallSid") ?? newId("call"));
+    const from = String(form.get("From") ?? "unknown");
+
+    const businessId =
+      req.nextUrl.searchParams.get("businessId") ?? "biz_clinic";
+    const businesses = await getBusinesses();
+    const business =
+      businesses.find((b) => b.id === businessId) ?? businesses[0];
+
+    // Flood guard: a number hammering the line (robodialers, spam) gets a
+    // polite brush-off instead of burning model tokens. 6 calls / 10 min.
+    if (from !== "unknown") {
+      const rl = rateLimit(`voice:${from}`, 6, 600_000);
+      if (!rl.ok) {
+        return new NextResponse(
+          sayAndHangup(
+            "You've reached us several times in the last few minutes. Please try again a little later. Goodbye.",
+            "en"
+          ),
+          { headers: xmlHeaders() }
+        );
+      }
+    }
+
+    // Returning callers get greeted by name, in the language they last spoke.
+    const known = await getCallerGreetingInfo(business.id, from);
+    const lang =
+      known.language && business.languages.includes(known.language)
+        ? known.language
+        : business.languages.includes("es")
+        ? "es"
+        : "en";
+
+    await upsertCall({
+      id: callSid,
+      businessId: business.id,
+      callerPhone: from,
+      language: lang,
+      channel: "phone",
+      startedAt: new Date().toISOString(),
+      outcome: "in_progress",
+      transcript: [],
+    });
+
+    const firstName = known.name?.split(" ")[0];
+    const defaultGreeting =
+      business.greeting?.replace("{name}", business.name) ??
+      (lang === "es"
+        ? `Gracias por comunicarse con ${business.name}. Soy AIVA, su asistente virtual. ¿En qué puedo ayudarle hoy?`
+        : `Thank you for calling ${business.name}. This is AIVA, your virtual assistant. How can I help you today?`);
+    const greeting = firstName
+      ? greetingFor(lang, business.name, firstName)
+      : defaultGreeting;
+    const actionUrl = `/api/voice/respond?businessId=${business.id}`;
+
+    return new NextResponse(sayAndGather(greeting, lang, actionUrl), {
+      headers: xmlHeaders(),
+    });
+  } catch (err) {
+    console.error("[Twilio incoming error]:", err);
+    return new NextResponse(
+      sayAndHangup("Hello. We are experiencing technical difficulties. Please try again later. Goodbye.", "en"),
+      { headers: xmlHeaders() }
+    );
   }
-
-  // Returning callers get greeted by name, in the language they last spoke.
-  const known = await getCallerGreetingInfo(business.id, from);
-  const lang =
-    known.language && business.languages.includes(known.language)
-      ? known.language
-      : "en";
-
-  await upsertCall({
-    id: callSid,
-    businessId: business.id,
-    callerPhone: from,
-    language: lang,
-    channel: "phone",
-    startedAt: new Date().toISOString(),
-    outcome: "in_progress",
-    transcript: [],
-  });
-
-  const firstName = known.name?.split(" ")[0];
-  const defaultGreeting =
-    business.greeting?.replace("{name}", business.name) ??
-    `Thank you for calling ${business.name}. This is AIVA, your virtual assistant. How can I help you today?`;
-  const greeting = firstName
-    ? greetingFor(lang, business.name, firstName)
-    : defaultGreeting;
-  const actionUrl = `/api/voice/respond?businessId=${business.id}`;
-
-  return new NextResponse(sayAndGather(greeting, lang, actionUrl), {
-    headers: xmlHeaders(),
-  });
 }
 
 // Localized welcome-back greetings (name-aware).

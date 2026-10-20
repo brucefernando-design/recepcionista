@@ -13,7 +13,7 @@ import type {
 import { seedBusinesses } from "./seed";
 import { intervalsOverlap } from "./overlap";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = process.env.VERCEL ? "/tmp" : path.join(process.cwd(), "data");
 
 interface Store {
   businesses: Business[];
@@ -25,6 +25,7 @@ interface Store {
 }
 
 const FILE = path.join(DATA_DIR, "store.json");
+const BUNDLED_FILE = path.join(process.cwd(), "data", "store.json");
 
 // In-memory cache so serverless invocations within one instance stay fast.
 let cache: Store | null = null;
@@ -34,27 +35,35 @@ async function load(): Promise<Store> {
   try {
     const raw = await fs.readFile(FILE, "utf-8");
     cache = JSON.parse(raw) as Store;
-    // Migrate stores written by earlier versions.
-    cache.actionItems ??= [];
-    cache.waitlist ??= [];
   } catch {
-    cache = {
-      businesses: seedBusinesses,
-      appointments: [],
-      orders: [],
-      calls: [],
-      actionItems: [],
-      waitlist: [],
-    };
+    try {
+      const raw = await fs.readFile(BUNDLED_FILE, "utf-8");
+      cache = JSON.parse(raw) as Store;
+    } catch {
+      cache = {
+        businesses: seedBusinesses,
+        appointments: [],
+        orders: [],
+        calls: [],
+        actionItems: [],
+        waitlist: [],
+      };
+    }
     await persist();
   }
+  cache.actionItems ??= [];
+  cache.waitlist ??= [];
   return cache!;
 }
 
 async function persist() {
   if (!cache) return;
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(FILE, JSON.stringify(cache, null, 2), "utf-8");
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await fs.writeFile(FILE, JSON.stringify(cache, null, 2), "utf-8");
+  } catch (err) {
+    console.error("[db.persist error]:", err);
+  }
 }
 
 export function newId(prefix: string): string {

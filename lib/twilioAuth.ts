@@ -12,13 +12,28 @@ export function isValidTwilioRequest(
   if (!token) return true;
 
   const signature = req.headers.get("x-twilio-signature");
-  if (!signature) return false;
+  if (!signature) {
+    console.warn("[Twilio Auth] Missing x-twilio-signature header");
+    return false;
+  }
 
-  const url = `${process.env.NEXT_PUBLIC_APP_URL ?? ""}${req.nextUrl.pathname}${req.nextUrl.search}`;
+  const host =
+    req.headers.get("x-forwarded-host") ||
+    req.headers.get("host") ||
+    "";
+  const proto = req.headers.get("x-forwarded-proto") || "https";
+  const defaultBaseUrl = host ? `${proto}://${host}` : "";
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || defaultBaseUrl;
+  const url = `${baseUrl}${req.nextUrl.pathname}${req.nextUrl.search}`;
+
   const params: Record<string, string> = {};
   form.forEach((value, key) => {
     params[key] = String(value);
   });
 
-  return twilio.validateRequest(token, signature, url, params);
+  const valid = twilio.validateRequest(token, signature, url, params);
+  if (!valid) {
+    console.warn(`[Twilio Auth] Signature verification failed for URL: ${url}`);
+  }
+  return valid;
 }
