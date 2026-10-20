@@ -1,5 +1,7 @@
 // SMS confirmations in the caller's language — a booking made in Spanish
 // should be confirmed in Spanish.
+import { formatSpokenTimeEs } from "./format";
+
 interface BookingSmsParams {
   business: string;
   service: string;
@@ -14,7 +16,7 @@ const BOOKING_TEMPLATES: Record<string, (p: BookingSmsParams) => string> = {
   hi: (p) =>
     `${p.business}: आपकी ${p.service} बुकिंग ${p.date} को ${p.time} बजे पक्की हो गई है। संदर्भ ${p.ref}।`,
   es: (p) =>
-    `${p.business}: su ${p.service} está confirmada para el ${p.date} a las ${p.time}. Ref ${p.ref}.`,
+    `${p.business}: su ${p.service} está confirmada para el ${p.date} a ${formatSpokenTimeEs(p.time)}. Ref ${p.ref}.`,
   fr: (p) =>
     `${p.business} : votre ${p.service} est confirmé le ${p.date} à ${p.time}. Réf ${p.ref}.`,
   de: (p) =>

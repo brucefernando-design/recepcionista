@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { callDuration, relativeTime } from "../lib/format";
+import { callDuration, formatSpokenTimeEs, formatTime12h, relativeTime } from "../lib/format";
+
+test("spoken time spanish formats naturally", () => {
+  assert.equal(formatSpokenTimeEs("15:00"), "las 3 de la tarde");
+  assert.equal(formatSpokenTimeEs("10:00"), "las 10 de la mañana");
+  assert.equal(formatSpokenTimeEs("13:00"), "la 1 de la tarde");
+  assert.equal(formatSpokenTimeEs("15:30"), "las 3 y media de la tarde");
+  assert.equal(formatSpokenTimeEs("12:00"), "las 12 del mediodía");
+  assert.equal(formatTime12h("15:00"), "3:00 PM");
+  assert.equal(formatTime12h("09:30"), "9:30 AM");
+});
 
 test("relative time buckets", () => {
   const now = Date.now();

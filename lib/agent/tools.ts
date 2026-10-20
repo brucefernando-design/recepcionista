@@ -14,6 +14,7 @@ import {
 } from "../db";
 import { findFreeSlots, isClosedOn, parseBookableWindow } from "../slots";
 import { occurrenceDates } from "../recurrence";
+import { formatSpokenTimeEs } from "../format";
 import { sendSms } from "../sms";
 import { bookingConfirmationSms, orderConfirmationSms } from "../smsTemplates";
 import { emitWebhook } from "../webhooks";
@@ -243,21 +244,31 @@ export async function executeTool(
   try {
     switch (name) {
       case "check_availability": {
+        const { open, close } = parseBookableWindow(business.hours);
+        let time = String(input.time);
+        const [rawH, rawM] = time.split(":");
+        let h = Number(rawH);
+        const m = rawM ?? "00";
+        if (!isNaN(h) && h < open && h + 12 >= open && h + 12 < close) {
+          h += 12;
+          time = `${String(h).padStart(2, "0")}:${m}`;
+        }
         const taken = await isSlotTaken(
           business.id,
           String(input.date),
-          String(input.time)
+          time
         );
+        const spoken = formatSpokenTimeEs(time);
         return {
           result: taken
-            ? `The slot on ${input.date} at ${input.time} is already taken. Suggest a nearby time.`
-            : `The slot on ${input.date} at ${input.time} is available.`,
+            ? `The slot on ${input.date} at ${time} (${spoken}) is already taken. Suggest a nearby time.`
+            : `The slot on ${input.date} at ${time} (${spoken}) is available. Speak it naturally to the caller: "${spoken}".`,
         };
       }
 
       case "book_appointment": {
         const date = String(input.date);
-        const time = String(input.time);
+        let time = String(input.time);
 
         // Server-side guardrails: never trust the model to have validated.
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{1,2}:\d{2}$/.test(time)) {
@@ -282,8 +293,16 @@ export async function executeTool(
             isError: true,
           };
         }
-        // Reject times outside opening hours.
+        // Normalize time: if someone passed 3:00 during afternoon business hours, treat as 15:00
         const { open, close } = parseBookableWindow(business.hours);
+        const [rawH, rawM] = time.split(":");
+        let h = Number(rawH);
+        const m = rawM ?? "00";
+        if (!isNaN(h) && h < open && h + 12 >= open && h + 12 < close) {
+          h += 12;
+          time = `${String(h).padStart(2, "0")}:${m}`;
+        }
+
         const hour = Number(time.split(":")[0]) + Number(time.split(":")[1]) / 60;
         if (hour < open || hour >= close) {
           return {
@@ -314,7 +333,7 @@ export async function executeTool(
           serviceId: service?.id ?? "custom",
           serviceName: service?.name ?? serviceName,
           date: String(input.date),
-          time: String(input.time),
+          time,
           durationMinutes: duration,
           status: "confirmed",
           notes: input.notes ? String(input.notes) : undefined,
@@ -340,17 +359,19 @@ export async function executeTool(
           date: appt.date,
           time: appt.time,
         });
+        const spokenTime = formatSpokenTimeEs(appt.time);
         return {
-          result: `Appointment confirmed and SMS confirmation sent. Reference: ${appt.id}.`,
+          result: `Appointment confirmed for ${appt.customerName} on ${appt.date} at ${appt.time} (${spokenTime}). Reference: ${appt.id}. Say to the caller: "Su cita quedó confirmada para ${spokenTime}".`,
           event: "appointment_booked",
         };
       }
 
       case "find_free_slots": {
         const slots = await findFreeSlots(business, String(input.date));
+        const friendly = slots.map((s) => `${s} (${formatSpokenTimeEs(s)})`).join(", ");
         return {
           result: slots.length
-            ? `Free slots on ${input.date}: ${slots.join(", ")}.`
+            ? `Free slots on ${input.date}: ${friendly}. Offer 2-3 times speaking them naturally (e.g. "a las 3 de la tarde").`
             : `No free slots remain on ${input.date}. Suggest another day.`,
         };
       }
