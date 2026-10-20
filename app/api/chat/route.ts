@@ -86,9 +86,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     console.error("chat error", err);
-    const key = process.env.ANTHROPIC_API_KEY || "";
-    const keyInfo = `key_len=${key.length},prefix=${key.slice(0, 10)},suffix=${key.slice(-4)},firstChar=${key[0]}`;
-    const msg = err instanceof Error ? `${err.message} [info: ${keyInfo}]` : String(err);
+    let rawAnthropic = "";
+    try {
+      const testRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-5-5",
+          max_tokens: 10,
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      });
+      const rawText = await testRes.text();
+      rawAnthropic = `status=${testRes.status}, body=${rawText.slice(0, 200)}`;
+    } catch (e: any) {
+      rawAnthropic = `fetch_failed: ${e.message}`;
+    }
+    const msg = err instanceof Error ? `${err.message} [raw: ${rawAnthropic}]` : String(err);
     return NextResponse.json(
       { reply: `Error: ${msg}`, events: [] },
       { status: 200 }
