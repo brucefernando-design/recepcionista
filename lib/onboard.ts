@@ -87,7 +87,7 @@ const BUSINESS_SCHEMA = {
 
 export async function generateBusiness(description: string): Promise<Business> {
   const response = await client.messages.create({
-    model: process.env.ANTHROPIC_MODEL || "claude-3-haiku-20240307",
+    model: process.env.ANTHROPIC_MODEL || "claude-haiku-5-5",
     max_tokens: 4096,
     output_config: {
       format: { type: "json_schema", schema: BUSINESS_SCHEMA },
