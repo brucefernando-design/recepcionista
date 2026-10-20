@@ -72,7 +72,6 @@ export async function analyzeCall(
       model: process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-20241022",
       max_tokens: 1024,
       output_config: {
-        effort: "low",
         format: {
           type: "json_schema",
           schema: INSIGHT_SCHEMA,

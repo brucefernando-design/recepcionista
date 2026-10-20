@@ -86,9 +86,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     console.error("chat error", err);
+    const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: "Something went wrong" },
-      { status: 500 }
+      { reply: `Error: ${msg}`, events: [] },
+      { status: 200 }
     );
   }
 }

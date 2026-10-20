@@ -59,8 +59,6 @@ export async function runAgentTurn(
       response = await client.messages.create({
         model: MODEL,
         max_tokens: 1024,
-        thinking: { type: "adaptive" },
-        output_config: { effort: "low" }, // low latency matters on a live call
         system: [
           {
             type: "text",
@@ -78,7 +76,7 @@ export async function runAgentTurn(
       if (err instanceof Anthropic.AuthenticationError) {
         return {
           reply:
-            "Configuration issue: the Anthropic API key is invalid. Check ANTHROPIC_API_KEY in .env.local and restart the server.",
+            "Error de autenticación: la clave de Anthropic no es válida o no está configurada correctamente en Vercel.",
           events: [],
           language,
         };
@@ -90,12 +88,16 @@ export async function runAgentTurn(
       ) {
         return {
           reply:
-            "I'm sorry, our line is very busy right now. Let me connect you to a staff member.",
+            "Lo sentimos, la línea está ocupada en este momento. Por favor intente en un momento.",
           events: ["transfer_requested"],
           language,
         };
       }
-      throw err;
+      return {
+        reply: `Error con el servicio de IA: ${err instanceof Error ? err.message : String(err)}`,
+        events: [],
+        language,
+      };
     }
 
     if (response.stop_reason === "tool_use") {

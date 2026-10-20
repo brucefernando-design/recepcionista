@@ -137,7 +137,10 @@ export default function DemoPage() {
       });
       const data = await res.json();
       const reply: string =
-        data.reply ?? "Sorry, something went wrong. Please try again.";
+        data.reply ??
+        (lang === "es"
+          ? "Disculpa, ha ocurrido un error. Por favor intenta de nuevo."
+          : "Sorry, something went wrong. Please try again.");
       // Follow the agent's language switch so browser TTS/STT match.
       if (data.language && SPEECH_LOCALES[data.language]) setLang(data.language);
       setTurns((t) => [...t, { role: "assistant", content: reply }]);
@@ -145,7 +148,13 @@ export default function DemoPage() {
     } catch {
       setTurns((t) => [
         ...t,
-        { role: "assistant", content: "Connection error — please try again." },
+        {
+          role: "assistant",
+          content:
+            lang === "es"
+              ? "Error de conexión — por favor intenta de nuevo."
+              : "Connection error — please try again.",
+        },
       ]);
     } finally {
       setThinking(false);
