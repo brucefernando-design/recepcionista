@@ -5,6 +5,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Waveform from "@/components/Waveform";
 import type { Business } from "@/lib/types";
+import { useLanguage } from "@/components/LanguageContext";
 
 interface Turn {
   role: "user" | "assistant";
@@ -12,7 +13,7 @@ interface Turn {
 }
 
 const SPEECH_LOCALES: Record<string, string> = {
-  en: "en-US", hi: "hi-IN", es: "es-ES", fr: "fr-FR",
+  es: "es-ES", en: "en-US", hi: "hi-IN", fr: "fr-FR",
   de: "de-DE", it: "it-IT", pt: "pt-BR", ja: "ja-JP",
 };
 
@@ -20,8 +21,7 @@ const TYPE_EMOJI: Record<string, string> = {
   clinic: "🏥", salon: "💇", restaurant: "🍕", hotel: "🏨",
 };
 
-// One-tap conversation starters, tailored per business type.
-const QUICK_PROMPTS: Record<string, string[]> = {
+const QUICK_PROMPTS_EN: Record<string, string[]> = {
   clinic: [
     "I'd like to book a checkup tomorrow at 3pm",
     "Do you accept walk-ins?",
@@ -40,14 +40,38 @@ const QUICK_PROMPTS: Record<string, string[]> = {
   hotel: [
     "Do you have a king room this weekend?",
     "What time is check-in?",
-    "¿Hablan español?",
+    "Is breakfast included?",
+  ],
+};
+
+const QUICK_PROMPTS_ES: Record<string, string[]> = {
+  clinic: [
+    "Quisiera agendar una cita para mañana a las 3pm",
+    "¿Aceptan pacientes sin cita previa?",
+    "¿Qué horarios tienen libres este viernes?",
+  ],
+  salon: [
+    "¿Tienen hora para un corte de cabello este sábado?",
+    "¿Cuánto cuesta el tinte de cabello?",
+    "Necesito reagendar mi cita",
+  ],
+  restaurant: [
+    "Quisiera pedir dos pizzas margherita para llevar",
+    "¿Tienen opciones veganas o vegetarianas?",
+    "¿Mesa para cuatro personas hoy a las 8pm?",
+  ],
+  hotel: [
+    "¿Tienen habitación disponible para este fin de semana?",
+    "¿A qué hora es el check-in?",
+    "¿Tienen estacionamiento incluido?",
   ],
 };
 
 export default function DemoPage() {
+  const { lang: globalLang } = useLanguage();
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [businessId, setBusinessId] = useState("biz_clinic");
-  const [lang, setLang] = useState("en");
+  const [lang, setLang] = useState(globalLang);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
@@ -61,11 +85,14 @@ export default function DemoPage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    setLang(globalLang);
+  }, [globalLang]);
+
+  useEffect(() => {
     fetch("/api/businesses")
       .then((r) => r.json())
       .then((list) => {
         setBusinesses(list);
-        // Deep link: /demo?biz=biz_restaurant&lang=es preselects.
         const params = new URLSearchParams(window.location.search);
         const biz = params.get("biz");
         const preLang = params.get("lang");
@@ -83,7 +110,6 @@ export default function DemoPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns, thinking]);
 
-  // Escape stops the mic and playback; "/" focuses the composer.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -109,11 +135,11 @@ export default function DemoPage() {
   function speakIn(text: string, langCode: string) {
     try {
       const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = SPEECH_LOCALES[langCode] ?? "en-US";
+      utter.lang = SPEECH_LOCALES[langCode] ?? "es-ES";
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utter);
     } catch {
-      // speech synthesis unavailable — text is still shown
+      // speech synthesis unavailable
     }
   }
 
@@ -141,7 +167,6 @@ export default function DemoPage() {
         (lang === "es"
           ? "Disculpa, ha ocurrido un error. Por favor intenta de nuevo."
           : "Sorry, something went wrong. Please try again.");
-      // Follow the agent's language switch so browser TTS/STT match.
       if (data.language && SPEECH_LOCALES[data.language]) setLang(data.language);
       setTurns((t) => [...t, { role: "assistant", content: reply }]);
       speakIn(reply, data.language ?? lang);
@@ -167,7 +192,7 @@ export default function DemoPage() {
       (window as any).webkitSpeechRecognition;
     if (!SR) return;
     const rec = new SR();
-    rec.lang = SPEECH_LOCALES[lang] ?? "en-US";
+    rec.lang = SPEECH_LOCALES[lang] ?? "es-ES";
     rec.interimResults = false;
     rec.onresult = (e: any) => {
       const transcript = e.results[0][0].transcript;
@@ -193,7 +218,6 @@ export default function DemoPage() {
     window.speechSynthesis?.cancel();
   }
 
-  // Hang up: triggers the same post-call intelligence a phone call gets.
   async function endCall() {
     if (turns.length === 0 || ending) return;
     setEnding(true);
@@ -207,20 +231,22 @@ export default function DemoPage() {
       const call = await res.json();
       if (res.ok && call.summary) {
         setInsight(
-          `📋 ${call.summary} · sentiment: ${call.sentiment ?? "n/a"}` +
+          `📋 ${call.summary} · ${lang === "es" ? "sentimiento" : "sentiment"}: ${call.sentiment ?? "n/a"}` +
             (call.upsellOpportunity ? ` · 💡 ${call.upsellOpportunity}` : "")
         );
       } else {
-        setInsight("Call saved to the dashboard.");
+        setInsight(lang === "es" ? "Llamada guardada en el panel." : "Call saved to the dashboard.");
       }
     } catch {
-      setInsight("Call saved to the dashboard.");
+      setInsight(lang === "es" ? "Llamada guardada en el panel." : "Call saved to the dashboard.");
     } finally {
       setEnding(false);
       callIdRef.current = `web_${Date.now().toString(36)}`;
       setTurns([]);
     }
   }
+
+  const quickPrompts = lang === "es" ? QUICK_PROMPTS_ES : QUICK_PROMPTS_EN;
 
   return (
     <>
@@ -230,12 +256,14 @@ export default function DemoPage() {
         <div className="orb right-[-8%] bottom-[10%] h-80 w-80 animate-orb bg-purple-600/25 [animation-delay:-10s]" aria-hidden />
 
         <div className="relative mb-10 text-center">
-          <p className="eyebrow">Live demo</p>
+          <p className="eyebrow">{lang === "es" ? "Demostración en vivo" : "Live demo"}</p>
           <h1 className="mt-4 font-display text-4xl font-semibold tracking-tight md:text-5xl">
-            Talk to AIVA.
+            {lang === "es" ? "Habla con AIVA." : "Talk to AIVA."}
           </h1>
           <p className="mt-3 text-slate-400">
-            Pick a business, then speak or type — AIVA handles the rest.
+            {lang === "es"
+              ? "Elige un negocio, habla por micrófono o escribe — AIVA se encarga del resto."
+              : "Pick a business, then speak or type — AIVA handles the rest."}
           </p>
         </div>
 
@@ -270,12 +298,14 @@ export default function DemoPage() {
               onClick={endCall}
               disabled={turns.length === 0 || ending}
               className="btn-secondary !px-4 !py-2 text-sm disabled:opacity-40"
-              title="Hang up and run post-call analysis"
+              title={lang === "es" ? "Colgar y ver análisis" : "Hang up and run post-call analysis"}
             >
-              {ending ? "Analyzing…" : "☎️ End call"}
+              {ending
+                ? (lang === "es" ? "Analizando…" : "Analyzing…")
+                : (lang === "es" ? "☎️ Colgar" : "☎️ End call")}
             </button>
             <button onClick={reset} className="btn-secondary !px-4 !py-2 text-sm">
-              Reset
+              {lang === "es" ? "Reiniciar" : "Reset"}
             </button>
           </div>
 
@@ -301,7 +331,7 @@ export default function DemoPage() {
                   </div>
                   <div>
                     <div className="text-sm font-semibold">
-                      {business?.name ?? "Loading…"}
+                      {business?.name ?? (lang === "es" ? "Cargando…" : "Loading…")}
                     </div>
                     <div
                       className={`text-xs ${
@@ -309,12 +339,12 @@ export default function DemoPage() {
                       }`}
                     >
                       {thinking
-                        ? "AIVA is thinking…"
+                        ? (lang === "es" ? "AIVA está pensando…" : "AIVA is thinking…")
                         : listening
-                        ? "Listening to you…"
+                        ? (lang === "es" ? "Escuchándote…" : "Listening to you…")
                         : turns.length > 0
-                        ? "● On call with AIVA"
-                        : "Ready to answer"}
+                        ? (lang === "es" ? "● En llamada con AIVA" : "● On call with AIVA")
+                        : (lang === "es" ? "Lista para responder" : "Ready to answer")}
                     </div>
                   </div>
                 </div>
@@ -332,11 +362,15 @@ export default function DemoPage() {
                     <div className="animate-floaty text-5xl">🎙️</div>
                     <p className="mt-4 text-sm">
                       {business
-                        ? `You're calling ${business.name}. Say hello!`
-                        : "Loading businesses…"}
+                        ? (lang === "es"
+                            ? `Estás llamando a ${business.name}. ¡Di hola!`
+                            : `You're calling ${business.name}. Say hello!`)
+                        : (lang === "es" ? "Cargando negocios…" : "Loading businesses…")}
                     </p>
                     <p className="mt-1.5 text-xs text-slate-600">
-                      Try: &quot;I&apos;d like to book an appointment tomorrow at 3pm&quot;
+                      {lang === "es"
+                        ? 'Prueba decir: "Quisiera agendar una cita para mañana"'
+                        : 'Try: "I\'d like to book an appointment tomorrow at 3pm"'}
                     </p>
                   </div>
                 )}
@@ -365,7 +399,7 @@ export default function DemoPage() {
               {/* quick prompts */}
               {turns.length === 0 && business && (
                 <div className="flex flex-wrap gap-2 border-t border-white/5 px-4 pt-3">
-                  {(QUICK_PROMPTS[business.type] ?? []).map((p) => (
+                  {(quickPrompts[business.type] ?? []).map((p) => (
                     <button
                       key={p}
                       onClick={() => send(p)}
@@ -394,7 +428,7 @@ export default function DemoPage() {
                         ? "pulse-ring bg-red-500"
                         : "bg-gradient-to-br from-brand-400 to-brand-600 hover:scale-105"
                     }`}
-                    title={listening ? "Stop listening" : "Speak"}
+                    title={listening ? (lang === "es" ? "Detener" : "Stop listening") : (lang === "es" ? "Hablar" : "Speak")}
                   >
                     <span className="relative z-10">{listening ? "⏹" : "🎙️"}</span>
                   </button>
@@ -403,11 +437,15 @@ export default function DemoPage() {
                   ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder={listening ? "Listening…" : "Or type your message… (press / to focus)"}
+                  placeholder={
+                    listening
+                      ? (lang === "es" ? "Escuchando…" : "Listening…")
+                      : (lang === "es" ? "O escribe tu mensaje aquí… (presiona / para enfocar)" : "Or type your message… (press / to focus)")
+                  }
                   className="flex-1 rounded-xl border border-slate-700/80 bg-slate-950/80 px-4 py-3 text-sm outline-none transition focus:border-brand-500"
                 />
                 <button type="submit" className="btn-primary !px-5" disabled={thinking}>
-                  Send
+                  {lang === "es" ? "Enviar" : "Send"}
                 </button>
               </form>
             </div>
@@ -415,11 +453,23 @@ export default function DemoPage() {
 
           <div className="mt-6 flex flex-col items-center gap-2 text-center text-xs text-slate-500">
             <p>
-              Bookings and orders made here appear live in the{" "}
-              <Link href="/dashboard" className="text-brand-400 hover:underline">
-                dashboard
-              </Link>
-              {" "}— hang up to see AIVA&apos;s post-call analysis.
+              {lang === "es" ? (
+                <>
+                  Las reservas y pedidos hechos aquí se reflejan en el{" "}
+                  <Link href="/dashboard" className="text-brand-400 hover:underline">
+                    panel de control
+                  </Link>
+                  {" "}— cuelga la llamada para ver el análisis de la IA.
+                </>
+              ) : (
+                <>
+                  Bookings and orders made here appear live in the{" "}
+                  <Link href="/dashboard" className="text-brand-400 hover:underline">
+                    dashboard
+                  </Link>
+                  {" "}— hang up to see AIVA&apos;s post-call analysis.
+                </>
+              )}
             </p>
             <button
               onClick={() => {
@@ -428,7 +478,7 @@ export default function DemoPage() {
               }}
               className="text-slate-400 hover:text-white"
             >
-              🔗 Copy shareable link to this business
+              🔗 {lang === "es" ? "Copiar enlace de este negocio" : "Copy shareable link to this business"}
             </button>
           </div>
         </div>

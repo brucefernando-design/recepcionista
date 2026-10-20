@@ -4,18 +4,21 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
-
-const LINKS: [string, string][] = [
-  ["/#features", "Features"],
-  ["/#industries", "Industries"],
-  ["/#open-source", "Open source"],
-  ["/onboard", "Add your business"],
-  ["/dashboard", "Dashboard"],
-];
+import LanguageToggle from "./LanguageToggle";
+import { useLanguage } from "./LanguageContext";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const { lang } = useLanguage();
+
+  const links: [string, string][] = [
+    ["/#features", lang === "es" ? "Características" : "Features"],
+    ["/#industries", lang === "es" ? "Industrias" : "Industries"],
+    ["/#open-source", lang === "es" ? "Código abierto" : "Open source"],
+    ["/onboard", lang === "es" ? "Configurar negocio" : "Add your business"],
+    ["/dashboard", lang === "es" ? "Panel de control" : "Dashboard"],
+  ];
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -38,7 +41,7 @@ export default function Navbar() {
           <span className="font-display tracking-tight">AIVA</span>
         </Link>
         <nav className="hidden items-center gap-8 text-sm text-slate-300 md:flex">
-          {LINKS.map(([href, label]) => (
+          {links.map(([href, label]) => (
             <Link
               key={href}
               href={href}
@@ -48,10 +51,11 @@ export default function Navbar() {
             </Link>
           ))}
         </nav>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <LanguageToggle />
           <ThemeToggle />
           <Link href="/demo" className="btn-primary !px-4 !py-2 text-sm">
-            Try the demo
+            {lang === "es" ? "Probar demo" : "Try the demo"}
           </Link>
           <button
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700/80 text-lg md:hidden"
@@ -67,7 +71,7 @@ export default function Navbar() {
       {/* mobile menu */}
       {open && (
         <nav className="glass animate-fade-up border-t border-white/5 px-6 py-4 md:hidden">
-          {LINKS.map(([href, label]) => (
+          {links.map(([href, label]) => (
             <Link
               key={href}
               href={href}

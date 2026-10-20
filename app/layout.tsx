@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Fraunces } from "next/font/google";
 import "./globals.css";
+import { LanguageProvider } from "@/components/LanguageContext";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -58,7 +59,9 @@ export default function RootLayout({
         <a href="#main" className="skip-link">
           Skip to content
         </a>
-        <div id="main">{children}</div>
+        <div id="main">
+          <LanguageProvider>{children}</LanguageProvider>
+        </div>
       </body>
     </html>
   );

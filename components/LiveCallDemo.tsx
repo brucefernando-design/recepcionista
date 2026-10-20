@@ -2,27 +2,41 @@
 
 import { useEffect, useRef, useState } from "react";
 import Waveform from "./Waveform";
+import { useLanguage } from "./LanguageContext";
 
 interface Step {
   role: "caller" | "aiva" | "event";
   text: string;
-  pause: number; // ms before this step appears
+  pause: number;
 }
 
-// A scripted call that plays on loop in the hero — shows exactly what AIVA
-// does (multilingual booking) without the visitor doing anything.
-const SCRIPT: Step[] = [
+const SCRIPT_EN: Step[] = [
   { role: "caller", text: "Hi! Do you have a table for two tonight?", pause: 1100 },
   { role: "aiva", text: "Of course! We have 7:30 or 9:00 free this evening — which works better?", pause: 1600 },
-  { role: "caller", text: "7:30 please. Also… ¿tienen opciones veganas?", pause: 1800 },
-  { role: "aiva", text: "¡Sí! Tenemos pizza vegana y pasta al pomodoro. Your table for two at 7:30 is confirmed 🎉", pause: 1900 },
+  { role: "caller", text: "7:30 please. Also… do you have vegan options?", pause: 1800 },
+  { role: "aiva", text: "Yes! We have vegan pizza and pasta al pomodoro. Your table for two at 7:30 is confirmed 🎉", pause: 1900 },
   { role: "event", text: "📅 Booked · Table for 2 · 19:30 · SMS confirmation sent", pause: 1400 },
 ];
 
+const SCRIPT_ES: Step[] = [
+  { role: "caller", text: "¡Hola! ¿Tienen mesa para dos esta noche?", pause: 1100 },
+  { role: "aiva", text: "¡Por supuesto! Tenemos disponible a las 7:30 o a las 9:00. ¿Cuál le viene mejor?", pause: 1600 },
+  { role: "caller", text: "A las 7:30, por favor. ¿Tienen opciones veganas?", pause: 1800 },
+  { role: "aiva", text: "¡Sí! Tenemos pizza vegana y pasta al pomodoro. Su mesa para dos a las 7:30 está confirmada 🎉", pause: 1900 },
+  { role: "event", text: "📅 Reservada · Mesa para 2 · 19:30 · Confirmación SMS enviada", pause: 1400 },
+];
+
 export default function LiveCallDemo() {
+  const { lang } = useLanguage();
+  const script = lang === "es" ? SCRIPT_ES : SCRIPT_EN;
   const [count, setCount] = useState(0);
   const [typing, setTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setCount(0);
+    setTyping(false);
+  }, [lang]);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,8 +44,7 @@ export default function LiveCallDemo() {
 
     function schedule(step: number) {
       if (cancelled) return;
-      if (step >= SCRIPT.length) {
-        // hold the finished call, then restart
+      if (step >= script.length) {
         timer = setTimeout(() => {
           if (cancelled) return;
           setCount(0);
@@ -39,7 +52,7 @@ export default function LiveCallDemo() {
         }, 3800);
         return;
       }
-      const s = SCRIPT[step];
+      const s = script[step];
       const showTyping = s.role === "aiva";
       if (showTyping) setTyping(true);
       timer = setTimeout(() => {
@@ -55,7 +68,7 @@ export default function LiveCallDemo() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, []);
+  }, [script]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -64,7 +77,7 @@ export default function LiveCallDemo() {
     });
   }, [count, typing]);
 
-  const visible = SCRIPT.slice(0, count);
+  const visible = script.slice(0, count);
 
   return (
     <div className="card-glow mx-auto w-full max-w-md animate-floaty">
@@ -78,7 +91,9 @@ export default function LiveCallDemo() {
             </div>
             <div>
               <div className="text-sm font-semibold">Bella Notte Trattoria</div>
-              <div className="text-xs text-emerald-400">● Live call · AIVA answering</div>
+              <div className="text-xs text-emerald-400">
+                ● {lang === "es" ? "Llamada en vivo · AIVA respondiendo" : "Live call · AIVA answering"}
+              </div>
             </div>
           </div>
           <Waveform />

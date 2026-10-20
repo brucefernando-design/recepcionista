@@ -1,39 +1,44 @@
+"use client";
+
 import Link from "next/link";
 import Logo from "./Logo";
-
-const COLUMNS: { title: string; links: [string, string][] }[] = [
-  {
-    title: "Product",
-    links: [
-      ["/#features", "Features"],
-      ["/#open-source", "Open source"],
-      ["/demo", "Live demo"],
-      ["/onboard", "AI onboarding"],
-    ],
-  },
-  {
-    title: "Industries",
-    links: [
-      ["/#industries", "Clinics"],
-      ["/#industries", "Salons"],
-      ["/#industries", "Restaurants"],
-      ["/#industries", "Hotels"],
-    ],
-  },
-  {
-    title: "Resources",
-    links: [
-      ["/dashboard", "Dashboard"],
-      ["/dashboard/analytics", "Analytics"],
-      ["https://github.com/7XLabs/aiva", "GitHub"],
-      ["https://github.com/7XLabs/aiva/blob/main/docs/API.md", "API docs"],
-      ["https://github.com/7XLabs/aiva/blob/main/docs/ARCHITECTURE.md", "Architecture"],
-      ["https://github.com/7XLabs/aiva/blob/main/docs/FAQ.md", "FAQ"],
-    ],
-  },
-];
+import { useLanguage } from "./LanguageContext";
 
 export default function Footer() {
+  const { lang } = useLanguage();
+
+  const columns = [
+    {
+      title: lang === "es" ? "Producto" : "Product",
+      links: [
+        ["/#features", lang === "es" ? "Características" : "Features"],
+        ["/#open-source", lang === "es" ? "Código abierto" : "Open source"],
+        ["/demo", lang === "es" ? "Demo interactiva" : "Live demo"],
+        ["/onboard", lang === "es" ? "Configuración con IA" : "AI onboarding"],
+      ],
+    },
+    {
+      title: lang === "es" ? "Industrias" : "Industries",
+      links: [
+        ["/#industries", lang === "es" ? "Clínicas" : "Clinics"],
+        ["/#industries", lang === "es" ? "Salones y Spas" : "Salons"],
+        ["/#industries", lang === "es" ? "Restaurantes" : "Restaurants"],
+        ["/#industries", lang === "es" ? "Hoteles" : "Hotels"],
+      ],
+    },
+    {
+      title: lang === "es" ? "Recursos" : "Resources",
+      links: [
+        ["/dashboard", lang === "es" ? "Panel de control" : "Dashboard"],
+        ["/dashboard/analytics", lang === "es" ? "Analíticas" : "Analytics"],
+        ["https://github.com/brucefernando-design/recepcionista", "GitHub"],
+        ["https://github.com/brucefernando-design/recepcionista/blob/main/docs/API.md", "Docs API"],
+        ["https://github.com/brucefernando-design/recepcionista/blob/main/docs/ARCHITECTURE.md", lang === "es" ? "Arquitectura" : "Architecture"],
+        ["https://github.com/brucefernando-design/recepcionista/blob/main/docs/FAQ.md", "FAQ"],
+      ],
+    },
+  ];
+
   return (
     <footer className="border-t border-white/5 bg-black/20">
       <div className="container-page grid gap-10 py-14 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
@@ -43,11 +48,12 @@ export default function Footer() {
             <span className="font-display tracking-tight">AIVA</span>
           </div>
           <p className="mt-4 max-w-xs text-sm leading-relaxed text-slate-400">
-            The AI receptionist that answers every call, in every language,
-            around the clock.
+            {lang === "es"
+              ? "La recepcionista con IA que atiende todas tus llamadas, en cualquier idioma, las 24 horas del día."
+              : "The AI receptionist that answers every call, in every language, around the clock."}
           </p>
         </div>
-        {COLUMNS.map((col) => (
+        {columns.map((col) => (
           <div key={col.title}>
             <h3 className="text-sm font-semibold text-slate-200">{col.title}</h3>
             <ul className="mt-4 space-y-2.5 text-sm text-slate-400">
@@ -70,7 +76,7 @@ export default function Footer() {
       </div>
       <div className="border-t border-white/5 py-6">
         <p className="container-page text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} AIVA by 7XLabs. All rights reserved.
+          © {new Date().getFullYear()} AIVA. {lang === "es" ? "Todos los derechos reservados." : "All rights reserved."}
         </p>
       </div>
     </footer>
