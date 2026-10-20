@@ -164,42 +164,6 @@ const TESTIMONIALS_DATA = [
   },
 ];
 
-const OPEN_SOURCE_DATA = [
-  {
-    icon: "🔓",
-    en: {
-      title: "MIT licensed, forever",
-      body: "No paid tiers, no locked features, no per-seat pricing. Every capability on this page is in the repo — clone it and it's yours.",
-    },
-    es: {
-      title: "Licencia libre MIT",
-      body: "Sin planes ocultos ni cobros por asiento. Todo el código está en tu repositorio: es tuyo y puedes personalizarlo a tu gusto.",
-    },
-  },
-  {
-    icon: "🏠",
-    en: {
-      title: "Self-hosted, your data",
-      body: "Transcripts, customer numbers and bookings live on your infrastructure. Nothing phones home.",
-    },
-    es: {
-      title: "Tus datos son privados",
-      body: "Las grabaciones, transcripciones y números de tus clientes viven en tu propia cuenta. Privacidad total.",
-    },
-  },
-  {
-    icon: "🛠️",
-    en: {
-      title: "Built to be hacked on",
-      body: "Typed end to end, unit-tested guardrails, a documented architecture, and a modular structure easy to expand.",
-    },
-    es: {
-      title: "Fácil de extender",
-      body: "Desarrollado en TypeScript moderno con Next.js y Tailwind CSS. Fácil de conectar a tus bases de datos o CRM.",
-    },
-  },
-];
-
 const LANGS = ["Español", "English", "हिन्दी", "Français", "Deutsch", "Italiano", "Português", "日本語"];
 
 export default function Home() {
@@ -400,54 +364,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ---------- Open source ---------- */}
-        <section id="open-source" className="relative py-24">
-          <div className="orb right-[5%] top-[20%] h-72 w-72 animate-orb bg-purple-700/30" aria-hidden />
-          <div className="container-page relative">
-            <Reveal>
-              <div className="text-center">
-                <p className="eyebrow">{lang === "es" ? "100% libre y personalizable" : "100% free & open source"}</p>
-                <h2 className="mt-4 font-display text-4xl font-semibold tracking-tight md:text-5xl">
-                  {lang === "es" ? "Sin intermediarios. Todo en tu control." : "No pricing page. Just a repo."}
-                </h2>
-                <p className="mx-auto mt-4 max-w-xl text-slate-400">
-                  {lang === "es"
-                    ? "AIVA se ejecuta en tu propia infraestructura con licencia abierta MIT. Pagas directamente tu consumo a Anthropic y Twilio a precio de coste sin sobreprecios."
-                    : "AIVA is MIT-licensed community software. You pay your own Anthropic and Twilio usage — and nothing to us, ever."}
-                </p>
-              </div>
-            </Reveal>
-            <div className="mx-auto mt-14 grid max-w-4xl gap-5 lg:grid-cols-3">
-              {OPEN_SOURCE_DATA.map((p, i) => {
-                const item = p[lang] ?? p.en;
-                return (
-                  <Reveal key={item.title} delay={i * 100}>
-                    <div className="card card-hover h-full">
-                      <div className="text-3xl">{p.icon}</div>
-                      <h3 className="mt-4 text-lg font-semibold">{item.title}</h3>
-                      <p className="mt-2 text-sm leading-relaxed text-slate-400">{item.body}</p>
-                    </div>
-                  </Reveal>
-                );
-              })}
-            </div>
-            <Reveal delay={200}>
-              <div className="mt-10 flex justify-center">
-                <a
-                  href="https://github.com/brucefernando-design/recepcionista"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-primary"
-                >
-                  ⭐ {lang === "es" ? "Ver código en GitHub" : "Star on GitHub"}
-                </a>
-              </div>
-            </Reveal>
-          </div>
-        </section>
-
         {/* ---------- FAQ ---------- */}
-        <section className="py-24">
+        <section id="faq" className="py-24">
           <div className="container-page">
             <Reveal>
               <div className="text-center">

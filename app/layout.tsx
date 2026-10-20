@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     template: "%s | AIVA",
   },
   description:
-    "Open-source AI receptionist that answers calls 24/7, books appointments, takes orders and speaks 8+ languages. Built for clinics, salons, restaurants and hotels.",
+    "AI receptionist that answers calls 24/7, books appointments, takes orders and speaks 8+ languages. Built for clinics, salons, restaurants and hotels.",
   keywords: [
     "AI receptionist",
     "AI voice agent",

@@ -7,13 +7,7 @@ export default function JsonLd() {
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web",
     description:
-      "Open-source AI receptionist that answers calls 24/7, books appointments, takes orders and speaks 8+ languages. Built for clinics, salons, restaurants and hotels.",
-    offers: {
-      "@type": "Offer",
-      price: "0",
-      priceCurrency: "USD",
-      description: "Open source, self-hostable",
-    },
+      "AI receptionist that answers calls 24/7, books appointments, takes orders and speaks 8+ languages. Built for clinics, salons, restaurants and hotels.",
     featureList: [
       "24/7 call answering",
       "Appointment booking",
@@ -22,7 +16,6 @@ export default function JsonLd() {
       "Post-call sentiment and intent analysis",
       "SMS confirmations and reminders",
     ],
-    softwareHelp: "https://github.com/7XLabs/aiva",
   };
 
   const faq = {

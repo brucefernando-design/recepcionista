@@ -15,7 +15,6 @@ export default function Navbar() {
   const links: [string, string][] = [
     ["/#features", lang === "es" ? "Características" : "Features"],
     ["/#industries", lang === "es" ? "Industrias" : "Industries"],
-    ["/#open-source", lang === "es" ? "Código abierto" : "Open source"],
     ["/onboard", lang === "es" ? "Configurar negocio" : "Add your business"],
     ["/dashboard", lang === "es" ? "Panel de control" : "Dashboard"],
   ];

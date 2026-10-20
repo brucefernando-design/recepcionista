@@ -12,7 +12,7 @@ export default function Footer() {
       title: lang === "es" ? "Producto" : "Product",
       links: [
         ["/#features", lang === "es" ? "Características" : "Features"],
-        ["/#open-source", lang === "es" ? "Código abierto" : "Open source"],
+        ["/#industries", lang === "es" ? "Industrias" : "Industries"],
         ["/demo", lang === "es" ? "Demo interactiva" : "Live demo"],
         ["/onboard", lang === "es" ? "Configuración con IA" : "AI onboarding"],
       ],
@@ -31,10 +31,7 @@ export default function Footer() {
       links: [
         ["/dashboard", lang === "es" ? "Panel de control" : "Dashboard"],
         ["/dashboard/analytics", lang === "es" ? "Analíticas" : "Analytics"],
-        ["https://github.com/brucefernando-design/recepcionista", "GitHub"],
-        ["https://github.com/brucefernando-design/recepcionista/blob/main/docs/API.md", "Docs API"],
-        ["https://github.com/brucefernando-design/recepcionista/blob/main/docs/ARCHITECTURE.md", lang === "es" ? "Arquitectura" : "Architecture"],
-        ["https://github.com/brucefernando-design/recepcionista/blob/main/docs/FAQ.md", "FAQ"],
+        ["/#faq", "FAQ"],
       ],
     },
   ];
