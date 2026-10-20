@@ -19,8 +19,8 @@ test("escapes XML-hostile caller content", () => {
 
 test("gather uses the requested language locale and voice", () => {
   const xml = sayAndGather("Hola", "es", "/api/voice/respond");
-  assert.ok(xml.includes(`language="es-ES"`));
-  assert.ok(xml.includes("Polly.Conchita"));
+  assert.ok(xml.includes(`language="es-MX"`));
+  assert.ok(xml.includes("Polly.Mia-Neural"));
   assert.ok(xml.includes(`action="/api/voice/respond"`));
 });
 

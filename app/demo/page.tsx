@@ -13,7 +13,7 @@ interface Turn {
 }
 
 const SPEECH_LOCALES: Record<string, string> = {
-  es: "es-ES", en: "en-US", hi: "hi-IN", fr: "fr-FR",
+  es: "es-MX", en: "en-US", hi: "hi-IN", fr: "fr-FR",
   de: "de-DE", it: "it-IT", pt: "pt-BR", ja: "ja-JP",
 };
 
@@ -79,6 +79,7 @@ export default function DemoPage() {
   const [voiceSupported, setVoiceSupported] = useState(true);
   const [ending, setEnding] = useState(false);
   const [insight, setInsight] = useState<string | null>(null);
+  const [speechRate, setSpeechRate] = useState<number>(1.18);
   const callIdRef = useRef<string>(`web_${Date.now().toString(36)}`);
   const recognitionRef = useRef<any>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -134,9 +135,36 @@ export default function DemoPage() {
 
   function speakIn(text: string, langCode: string) {
     try {
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = SPEECH_LOCALES[langCode] ?? "es-ES";
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
       window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      const targetLocale = SPEECH_LOCALES[langCode] ?? "es-MX";
+      utter.lang = targetLocale;
+      utter.rate = speechRate;
+      utter.pitch = 1.02;
+
+      const voices = window.speechSynthesis.getVoices();
+      if (voices && voices.length > 0) {
+        const langPrefix = targetLocale.slice(0, 2).toLowerCase();
+        const matchingVoices = voices.filter((v) =>
+          v.lang.toLowerCase().replace("_", "-").startsWith(langPrefix)
+        );
+        const bestVoice =
+          matchingVoices.find(
+            (v) =>
+              v.name.toLowerCase().includes("natural") ||
+              v.name.toLowerCase().includes("mexico") ||
+              v.name.toLowerCase().includes("sabina") ||
+              v.lang.toLowerCase().replace("_", "-") === targetLocale.toLowerCase()
+          ) ||
+          matchingVoices.find((v) => v.name.toLowerCase().includes("google")) ||
+          matchingVoices[0];
+
+        if (bestVoice) {
+          utter.voice = bestVoice;
+        }
+      }
+
       window.speechSynthesis.speak(utter);
     } catch {
       // speech synthesis unavailable
@@ -268,45 +296,71 @@ export default function DemoPage() {
         </div>
 
         <div className="relative mx-auto max-w-2xl">
-          <div className="mb-4 flex flex-wrap gap-3">
-            <select
-              value={businessId}
-              onChange={(e) => {
-                setBusinessId(e.target.value);
-                reset();
-              }}
-              className="min-w-52 flex-1 rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2.5 text-sm outline-none transition focus:border-brand-500"
-            >
-              {businesses.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {TYPE_EMOJI[b.type] ?? "📞"} {b.name}
-                </option>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2 flex-1">
+              <select
+                value={businessId}
+                onChange={(e) => {
+                  setBusinessId(e.target.value);
+                  reset();
+                }}
+                className="min-w-44 flex-1 rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2 text-sm outline-none transition focus:border-brand-500"
+              >
+                {businesses.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {TYPE_EMOJI[b.type] ?? "📞"} {b.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={lang}
+                onChange={(e) => setLang(e.target.value)}
+                className="rounded-xl border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm outline-none transition focus:border-brand-500"
+              >
+                {Object.keys(SPEECH_LOCALES).map((code) => (
+                  <option key={code} value={code}>
+                    {code.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={endCall}
+                disabled={turns.length === 0 || ending}
+                className="btn-secondary !px-3.5 !py-2 text-xs sm:text-sm disabled:opacity-40"
+                title={lang === "es" ? "Colgar y ver análisis" : "Hang up and run post-call analysis"}
+              >
+                {ending
+                  ? (lang === "es" ? "Analizando…" : "Analyzing…")
+                  : (lang === "es" ? "☎️ Colgar" : "☎️ End call")}
+              </button>
+              <button onClick={reset} className="btn-secondary !px-3.5 !py-2 text-xs sm:text-sm">
+                {lang === "es" ? "Reiniciar" : "Reset"}
+              </button>
+            </div>
+
+            {/* Selector de ritmo / velocidad de voz */}
+            <div className="flex items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-900/80 px-2.5 py-1.5 text-xs">
+              <span className="text-slate-400 font-medium mr-1">⚡ {lang === "es" ? "Ritmo:" : "Speed:"}</span>
+              {[
+                { label: "1.0x", rate: 1.0, title: "Normal" },
+                { label: "1.18x Ágil", rate: 1.18, title: "Ágil y natural" },
+                { label: "1.3x", rate: 1.3, title: "Rápido" },
+              ].map((opt) => (
+                <button
+                  key={opt.rate}
+                  type="button"
+                  title={opt.title}
+                  onClick={() => setSpeechRate(opt.rate)}
+                  className={`rounded-lg px-2 py-0.5 font-medium transition ${
+                    speechRate === opt.rate
+                      ? "bg-brand-500 text-white font-semibold shadow-sm"
+                      : "text-slate-400 hover:text-white hover:bg-slate-800"
+                  }`}
+                >
+                  {opt.label}
+                </button>
               ))}
-            </select>
-            <select
-              value={lang}
-              onChange={(e) => setLang(e.target.value)}
-              className="rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2.5 text-sm outline-none transition focus:border-brand-500"
-            >
-              {Object.keys(SPEECH_LOCALES).map((code) => (
-                <option key={code} value={code}>
-                  {code.toUpperCase()}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={endCall}
-              disabled={turns.length === 0 || ending}
-              className="btn-secondary !px-4 !py-2 text-sm disabled:opacity-40"
-              title={lang === "es" ? "Colgar y ver análisis" : "Hang up and run post-call analysis"}
-            >
-              {ending
-                ? (lang === "es" ? "Analizando…" : "Analyzing…")
-                : (lang === "es" ? "☎️ Colgar" : "☎️ End call")}
-            </button>
-            <button onClick={reset} className="btn-secondary !px-4 !py-2 text-sm">
-              {lang === "es" ? "Reiniciar" : "Reset"}
-            </button>
+            </div>
           </div>
 
           {insight && (

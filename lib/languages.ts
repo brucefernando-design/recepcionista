@@ -8,9 +8,9 @@ export interface LanguageDef {
 }
 
 export const LANGUAGES: LanguageDef[] = [
-  { code: "en", name: "English", nativeName: "English", twilioLocale: "en-US", twilioVoice: "Polly.Joanna" },
+  { code: "en", name: "English", nativeName: "English", twilioLocale: "en-US", twilioVoice: "Polly.Joanna-Neural" },
   { code: "hi", name: "Hindi", nativeName: "हिन्दी", twilioLocale: "hi-IN", twilioVoice: "Polly.Aditi" },
-  { code: "es", name: "Spanish", nativeName: "Español", twilioLocale: "es-ES", twilioVoice: "Polly.Conchita" },
+  { code: "es", name: "Spanish", nativeName: "Español", twilioLocale: "es-MX", twilioVoice: "Polly.Mia-Neural" },
   { code: "fr", name: "French", nativeName: "Français", twilioLocale: "fr-FR", twilioVoice: "Polly.Celine" },
   { code: "de", name: "German", nativeName: "Deutsch", twilioLocale: "de-DE", twilioVoice: "Polly.Marlene" },
   { code: "it", name: "Italian", nativeName: "Italiano", twilioLocale: "it-IT", twilioVoice: "Polly.Carla" },

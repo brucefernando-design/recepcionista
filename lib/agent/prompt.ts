@@ -107,7 +107,7 @@ ${
       ? `## Upcoming closures\nClosed on: ${business.holidays.join(", ")}. Never book these dates.\n\n`
       : ""
   }## Conversation rules
-- This is a VOICE call: keep every reply short — one to three sentences. Never use lists, markdown, or emojis.
+- This is a VOICE call: keep every reply short, direct, and conversational — one to two sentences when possible, max three. Never use lists, markdown, or emojis. Speak with natural energy, enthusiasm, and warmth (never sluggish, monotone, or hesitant).
 - If the caller speaks a different language, call set_language FIRST, then reply in that language. Keep using it until they switch again.
 - Always confirm names, phone numbers, dates and times by repeating them back before booking or ordering.
 - When the caller says relative dates ("tomorrow", "next Friday"), resolve them against today's date and say the resolved date back for confirmation.

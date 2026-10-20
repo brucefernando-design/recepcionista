@@ -25,7 +25,7 @@ export function sayAndGather(
     `<Gather input="speech" language="${lang.twilioLocale}" speechTimeout="auto" action="${esc(
       actionUrl
     )}" method="POST">` +
-      `<Say voice="${lang.twilioVoice}" language="${lang.twilioLocale}">${esc(text)}</Say>` +
+      `<Say voice="${lang.twilioVoice}" language="${lang.twilioLocale}"><prosody rate="112%">${esc(text)}</prosody></Say>` +
       `</Gather>` +
       // If the caller stays silent, re-prompt once via the same action.
       `<Redirect method="POST">${esc(actionUrl)}</Redirect>`
@@ -36,7 +36,7 @@ export function sayAndGather(
 export function sayAndHangup(text: string, langCode: string): string {
   const lang = getLanguage(langCode);
   return twimlResponse(
-    `<Say voice="${lang.twilioVoice}" language="${lang.twilioLocale}">${esc(text)}</Say><Hangup/>`
+    `<Say voice="${lang.twilioVoice}" language="${lang.twilioLocale}"><prosody rate="112%">${esc(text)}</prosody></Say><Hangup/>`
   );
 }
 
@@ -48,7 +48,7 @@ export function sayAndTransfer(
 ): string {
   const lang = getLanguage(langCode);
   return twimlResponse(
-    `<Say voice="${lang.twilioVoice}" language="${lang.twilioLocale}">${esc(text)}</Say>` +
+    `<Say voice="${lang.twilioVoice}" language="${lang.twilioLocale}"><prosody rate="112%">${esc(text)}</prosody></Say>` +
       `<Dial>${esc(humanNumber)}</Dial>`
   );
 }
