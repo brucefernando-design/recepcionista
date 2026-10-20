@@ -10,6 +10,19 @@ export interface SessionUser {
   email: string;
   businessId: string;
   name: string;
+  role?: string;
+}
+
+export const SUPERADMIN_EMAILS = [
+  "bruce.fernando@hotmail.com",
+];
+
+export function isSuperAdmin(user?: { email?: string; role?: string } | null): boolean {
+  if (!user?.email) return false;
+  return (
+    user.role === "superadmin" ||
+    SUPERADMIN_EMAILS.includes(user.email.toLowerCase().trim())
+  );
 }
 
 export async function hashPassword(password: string): Promise<string> {

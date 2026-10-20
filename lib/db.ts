@@ -34,13 +34,14 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
   ]);
   if (!res.rows[0]) return null;
   const r = res.rows[0];
+  const isSuper = r.email.toLowerCase().trim() === "bruce.fernando@hotmail.com";
   return {
     id: r.id,
     email: r.email,
     passwordHash: r.password_hash,
     name: r.name,
     businessId: r.business_id,
-    role: r.role,
+    role: isSuper ? "superadmin" : r.role,
     createdAt: r.created_at,
   };
 }
@@ -49,13 +50,14 @@ export async function findUserById(id: string): Promise<DbUser | null> {
   const res = await query("SELECT * FROM users WHERE id = $1", [id]);
   if (!res.rows[0]) return null;
   const r = res.rows[0];
+  const isSuper = r.email.toLowerCase().trim() === "bruce.fernando@hotmail.com";
   return {
     id: r.id,
     email: r.email,
     passwordHash: r.password_hash,
     name: r.name,
     businessId: r.business_id,
-    role: r.role,
+    role: isSuper ? "superadmin" : r.role,
     createdAt: r.created_at,
   };
 }
@@ -76,6 +78,8 @@ export async function createUser(data: {
   const userId = newId("usr");
   const businessId = newId("biz");
   const passwordHash = await hashPassword(data.password);
+  const isSuper = data.email.toLowerCase().trim() === "bruce.fernando@hotmail.com";
+  const role = isSuper ? "superadmin" : "owner";
 
   const newBiz: Business = {
     id: businessId,
@@ -107,7 +111,7 @@ export async function createUser(data: {
   await query(
     `INSERT INTO users (id, email, password_hash, name, business_id, role)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [userId, data.email.toLowerCase().trim(), passwordHash, data.name, businessId, "owner"]
+    [userId, data.email.toLowerCase().trim(), passwordHash, data.name, businessId, role]
   );
 
   const user: DbUser = {
@@ -116,11 +120,134 @@ export async function createUser(data: {
     passwordHash,
     name: data.name,
     businessId,
-    role: "owner",
+    role,
     createdAt: new Date().toISOString(),
   };
 
   return { user, business: newBiz };
+}
+
+export interface TenantInfo {
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+    createdAt: string;
+  };
+  business: Business;
+  stats: {
+    callsCount: number;
+    appointmentsCount: number;
+    ordersCount: number;
+  };
+}
+
+export async function getAllTenants(): Promise<TenantInfo[]> {
+  try {
+    const usersRes = await query("SELECT * FROM users ORDER BY created_at DESC");
+    const businessesRes = await query("SELECT * FROM businesses");
+    const callsRes = await query("SELECT business_id, count(*) as count FROM calls GROUP BY business_id");
+    const apptsRes = await query("SELECT business_id, count(*) as count FROM appointments GROUP BY business_id");
+    const ordersRes = await query("SELECT business_id, count(*) as count FROM orders GROUP BY business_id");
+
+    const callsMap = new Map<string, number>();
+    callsRes.rows.forEach((r: any) => callsMap.set(r.business_id, Number(r.count || 0)));
+
+    const apptsMap = new Map<string, number>();
+    apptsRes.rows.forEach((r: any) => apptsMap.set(r.business_id, Number(r.count || 0)));
+
+    const ordersMap = new Map<string, number>();
+    ordersRes.rows.forEach((r: any) => ordersMap.set(r.business_id, Number(r.count || 0)));
+
+    const bizMap = new Map<string, Business>();
+    businessesRes.rows.forEach((r: any) => bizMap.set(r.id, mapBusiness(r)));
+
+    return usersRes.rows.map((u: any) => {
+      const biz = bizMap.get(u.business_id) || {
+        id: u.business_id,
+        name: "Negocio no configurado",
+        type: "clinic" as const,
+        phone: "-",
+        address: "-",
+        hours: "-",
+        languages: ["es"],
+        services: [],
+        faqs: [],
+      };
+      return {
+        user: {
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          role: u.role,
+          createdAt: u.created_at,
+        },
+        business: biz,
+        stats: {
+          callsCount: callsMap.get(u.business_id) || 0,
+          appointmentsCount: apptsMap.get(u.business_id) || 0,
+          ordersCount: ordersMap.get(u.business_id) || 0,
+        },
+      };
+    });
+  } catch (err) {
+    console.error("[db.getAllTenants error]", err);
+    return [];
+  }
+}
+
+export async function deleteTenant(userId: string, businessId: string): Promise<boolean> {
+  try {
+    await query("DELETE FROM users WHERE id = $1", [userId]);
+    await query("DELETE FROM appointments WHERE business_id = $1", [businessId]);
+    await query("DELETE FROM orders WHERE business_id = $1", [businessId]);
+    await query("DELETE FROM calls WHERE business_id = $1", [businessId]);
+    await query("DELETE FROM action_items WHERE business_id = $1", [businessId]);
+    await query("DELETE FROM waitlist WHERE business_id = $1", [businessId]);
+    await query("DELETE FROM businesses WHERE id = $1", [businessId]);
+    return true;
+  } catch (err) {
+    console.error("[db.deleteTenant error]", err);
+    return false;
+  }
+}
+
+export async function getSuperadminStats() {
+  try {
+    const [tenants, calls, appts, orders] = await Promise.all([
+      getAllTenants(),
+      query("SELECT COUNT(*) as c FROM calls"),
+      query("SELECT COUNT(*) as c FROM appointments"),
+      query("SELECT COUNT(*) as c FROM orders"),
+    ]);
+
+    const recentCalls = await query(
+      `SELECT c.*, b.name as business_name, b.type as business_type 
+       FROM calls c 
+       LEFT JOIN businesses b ON c.business_id = b.id 
+       ORDER BY c.started_at DESC LIMIT 20`
+    );
+
+    return {
+      totalBusinesses: tenants.length,
+      totalCalls: Number(calls.rows[0]?.c || 0),
+      totalAppointments: Number(appts.rows[0]?.c || 0),
+      totalOrders: Number(orders.rows[0]?.c || 0),
+      tenants,
+      recentCalls: recentCalls.rows,
+    };
+  } catch (err) {
+    console.error("[db.getSuperadminStats error]", err);
+    return {
+      totalBusinesses: 0,
+      totalCalls: 0,
+      totalAppointments: 0,
+      totalOrders: 0,
+      tenants: [],
+      recentCalls: [],
+    };
+  }
 }
 
 // ---------------- Businesses ----------------

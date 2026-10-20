@@ -56,6 +56,15 @@ export default function Navbar() {
           <ThemeToggle />
           {user ? (
             <div className="hidden items-center gap-2 md:flex">
+              {(user.email?.toLowerCase().trim() === "bruce.fernando@hotmail.com" || user.role === "superadmin") && (
+                <Link
+                  href="/admin"
+                  className="flex items-center gap-1 rounded-xl bg-amber-500/20 px-2.5 py-1.5 text-xs font-semibold text-amber-300 ring-1 ring-amber-500/30 transition hover:bg-amber-500/30"
+                  title="Panel Superadmin"
+                >
+                  👑 Admin
+                </Link>
+              )}
               <Link
                 href="/dashboard"
                 className="flex items-center gap-1.5 rounded-xl border border-brand-500/30 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-300 transition hover:bg-brand-500/20"
@@ -108,15 +117,26 @@ export default function Navbar() {
           ))}
           <div className="mt-2 border-t border-white/5 pt-2">
             {user ? (
-              <button
-                onClick={() => {
-                  setOpen(false);
-                  logout();
-                }}
-                className="block w-full text-left rounded-lg px-3 py-2.5 text-sm text-red-400 transition hover:bg-white/5"
-              >
-                {lang === "es" ? "Cerrar sesión" : "Log out"}
-              </button>
+              <>
+                {(user.email?.toLowerCase().trim() === "bruce.fernando@hotmail.com" || user.role === "superadmin") && (
+                  <Link
+                    href="/admin"
+                    onClick={() => setOpen(false)}
+                    className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-amber-300 transition hover:bg-white/5"
+                  >
+                    👑 Panel Superadmin
+                  </Link>
+                )}
+                <button
+                  onClick={() => {
+                    setOpen(false);
+                    logout();
+                  }}
+                  className="block w-full text-left rounded-lg px-3 py-2.5 text-sm text-red-400 transition hover:bg-white/5"
+                >
+                  {lang === "es" ? "Cerrar sesión" : "Log out"}
+                </button>
+              </>
             ) : (
               <Link
                 href="/login"
