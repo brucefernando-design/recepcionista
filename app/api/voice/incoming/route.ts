@@ -21,12 +21,14 @@ export async function POST(req: NextRequest) {
     }
     const callSid = String(form.get("CallSid") ?? newId("call"));
     const from = String(form.get("From") ?? "unknown");
+    const to = String(form.get("To") ?? "").trim();
 
-    const businessId =
-      req.nextUrl.searchParams.get("businessId") ?? "biz_clinic";
+    const businessId = req.nextUrl.searchParams.get("businessId");
     const businesses = await getBusinesses();
     const business =
-      businesses.find((b) => b.id === businessId) ?? businesses[0];
+      (businessId ? businesses.find((b) => b.id === businessId) : null) ||
+      (to ? businesses.find((b) => b.phone && b.phone.replace(/\D/g, "") === to.replace(/\D/g, "")) : null) ||
+      businesses[0];
 
     // Flood guard: a number hammering the line (robodialers, spam) gets a
     // polite brush-off instead of burning model tokens. 6 calls / 10 min.
