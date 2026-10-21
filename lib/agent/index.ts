@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Business } from "../types";
 import { buildSystemPrompt, type PromptContext } from "./prompt";
 import { agentTools, executeTool, type ToolOutcome } from "./tools";
+import { isGroqConfigured, runGroqTurn } from "./groq";
 
 const client = new Anthropic();
 
@@ -35,6 +36,14 @@ export async function runAgentTurn(
   userMessage: string,
   opts: AgentTurnOptions = {}
 ): Promise<AgentTurnResult> {
+  if (isGroqConfigured()) {
+    try {
+      return await runGroqTurn(business, history, userMessage, opts);
+    } catch (err) {
+      console.error("[Groq failed, falling back to Anthropic]:", err);
+    }
+  }
+
   const events: AgentTurnResult["events"] = [];
   let language: string | undefined;
 
