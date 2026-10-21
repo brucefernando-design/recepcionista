@@ -1,7 +1,12 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "recepcionista-secret-key-2026-super-secure";
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error(
+    "JWT_SECRET environment variable is required. Set it in .env.local / Vercel and restart."
+  );
+}
 const COOKIE_NAME = "aiva_session";
 
 export interface SessionUser {

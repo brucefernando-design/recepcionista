@@ -15,6 +15,7 @@ const PROTECTED_PREFIXES = [
   "/api/calls",
   "/api/faq-suggestions",
   "/api/businesses",
+  "/api/reminders",
 ];
 
 export function middleware(req: NextRequest) {
@@ -22,7 +23,7 @@ export function middleware(req: NextRequest) {
   if (!token) return NextResponse.next();
 
   const { pathname } = req.nextUrl;
-  if (!PROTECTED_PREFIXES.some((p) => pathname.startsWith(p))) {
+  if (!PROTECTED_PREFIXES.some((p) => pathlib.startsWith(p))) {
     return NextResponse.next();
   }
 
@@ -32,7 +33,7 @@ export function middleware(req: NextRequest) {
   }
 
   // First visit with ?token= — set the cookie and continue.
-  const supplied =
+  const supplied=
     req.nextUrl.searchParams.get("token") ??
     req.headers.get("x-aiva-token");
   if (supplied === token) {
