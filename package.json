@@ -30,6 +30,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"tests/*.test.ts\"",
+    "stream": "tsx streaming/server.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "eval": "tsx scripts/eval.ts",
     "doctor": "tsx scripts/doctor.ts"
@@ -39,13 +40,15 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.2",
     "bcryptjs": "^3.0.3",
     "jsonwebtoken": "^9.0.3",
     "next": "14.2.5",
     "pg": "^8.23.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "twilio": "^5.3.0"
+    "twilio": "^5.3.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^20",
