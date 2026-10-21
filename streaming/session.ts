@@ -9,6 +9,7 @@ import type { ChatTurn } from "../lib/agent";
 export interface StreamSessionConfig {
   deepgramKey: string;
   cartesiaKey: string;
+  cartesiaVoiceId?: string;
   groqKey: string;
 }
 
@@ -73,7 +74,7 @@ export class CallStreamingSession {
     // Initialize Cartesia for real-time TTS
     this.cartesia = new CartesiaLiveClient(
       this.config.cartesiaKey,
-      "e0a4f5f9-2b0e-4509-a796-0e1fa63e5275", // Mexican Spanish voice
+      this.config.cartesiaVoiceId || "80ae4708-744d-459d-bd80-58964af17905", // Maritza - Reception Lead
       {
         onAudioChunk: (base64Mulaw) => {
           this.sendAudioToTwilio(base64Mulaw);

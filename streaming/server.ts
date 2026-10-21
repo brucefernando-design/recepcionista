@@ -10,23 +10,25 @@ const PORT = parseInt(process.env.PORT || "8080", 10);
 async function getApiKeys(): Promise<StreamSessionConfig> {
   let deepgramKey = process.env.DEEPGRAM_API_KEY || "";
   let cartesiaKey = process.env.CARTESIA_API_KEY || "";
+  let cartesiaVoiceId = process.env.CARTESIA_VOICE_ID || "";
   let groqKey = process.env.GROQ_API_KEY || "";
 
   // Check database settings fallback
   try {
     const res = await query(
-      "SELECT key, value FROM system_settings WHERE key IN ('deepgram_api_key', 'cartesia_api_key', 'groq_api_key')"
+      "SELECT key, value FROM system_settings WHERE key IN ('deepgram_api_key', 'cartesia_api_key', 'cartesia_voice_id', 'groq_api_key')"
     );
     for (const row of res.rows) {
       if (row.key === "deepgram_api_key" && !deepgramKey) deepgramKey = row.value;
       if (row.key === "cartesia_api_key" && !cartesiaKey) cartesiaKey = row.value;
+      if (row.key === "cartesia_voice_id" && !cartesiaVoiceId) cartesiaVoiceId = row.value;
       if (row.key === "groq_api_key" && !groqKey) groqKey = row.value;
     }
   } catch (err) {
     console.error("[Settings DB fetch error]:", err);
   }
 
-  return { deepgramKey, cartesiaKey, groqKey };
+  return { deepgramKey, cartesiaKey, cartesiaVoiceId, groqKey };
 }
 
 const server = http.createServer(async (req, res) => {
