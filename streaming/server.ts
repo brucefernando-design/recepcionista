@@ -5,7 +5,7 @@ import { CallStreamingSession, type StreamSessionConfig } from "./session";
 import { query } from "../lib/postgres";
 import type { TwilioInboundMessage } from "./types";
 
-const PORT = parseInt(process.env.PORT || "8080", 10);
+const PORT = parseInt(process.env.PORT || "8088", 10);
 
 let globalKeys: StreamSessionConfig | null = null;
 
@@ -45,7 +45,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Twilio inbound webhook: returns TwiML with <Connect><Stream>
-  if (pathname === "/incoming" && req.method === "POST") {
+  if (pathname === "/incoming") {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk.toString();
@@ -55,8 +55,8 @@ const server = http.createServer(async (req, res) => {
       const params = new URLSearchParams(body);
       const host = req.headers.host || `localhost:${PORT}`;
       const wsProtocol = req.headers["x-forwarded-proto"] === "https" ? "wss" : "ws";
-      const businessId = (queryParams.businessId as string) || "biz_clinic";
-      const from = params.get("From") || "unknown";
+      const businessId = (queryParams.businessId as string) || (params.get("businessId") as string) || "biz_clinic";
+      const from = params.get("From") || (queryParams.From as string) || "unknown";
 
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>

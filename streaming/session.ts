@@ -175,6 +175,7 @@ export class CallStreamingSession {
   public speakToCaller(text: string): void {
     this.currentContextId = `ctx_${Date.now()}`;
     this.isAiSpeaking = true;
+    console.log("[speakToCaller -> Cartesia]:", text);
     if (this.cartesia) {
       this.cartesia.sendText(text, this.currentContextId, false);
     }
@@ -184,6 +185,7 @@ export class CallStreamingSession {
     if (this.twilioWs.readyState !== WebSocket.OPEN || !this.streamSid) {
       return;
     }
+    console.log(`[Audio -> Twilio]: sending ${base64Mulaw.length} bytes mulaw to ${this.streamSid}`);
     const msg = {
       event: "media",
       streamSid: this.streamSid,

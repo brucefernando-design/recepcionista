@@ -12,10 +12,11 @@ export class CartesiaLiveClient {
   private voiceId: string;
   private callbacks: CartesiaCallbacks;
   private isConnected = false;
+  private pendingQueue: any[] = [];
 
   constructor(
     apiKey: string,
-    voiceId = "e0a4f5f9-2b0e-4509-a796-0e1fa63e5275", // Mexican Spanish / Multilingual Sonic voice
+    voiceId = "80ae4708-744d-459d-bd80-58964af17905", // Maritza - Reception Lead
     callbacks: CartesiaCallbacks
   ) {
     this.apiKey = apiKey.trim();
@@ -33,13 +34,17 @@ export class CartesiaLiveClient {
     this.ws.on("open", () => {
       this.isConnected = true;
       console.log("[Cartesia] connected for real-time TTS");
+      while (this.pendingQueue.length > 0) {
+        const item = this.pendingQueue.shift();
+        if (item && this.ws) this.ws.send(JSON.stringify(item));
+      }
     });
 
     this.ws.on("message", (data: WebSocket.RawData) => {
       try {
         const msg = JSON.parse(data.toString());
-        if (msg.audio) {
-          this.callbacks.onAudioChunk(msg.audio, msg.context_id || "");
+        if (msg.data) {
+          this.callbacks.onAudioChunk(msg.data, msg.context_id || "");
         }
         if (msg.done) {
           this.callbacks.onDone(msg.context_id || "");
@@ -64,13 +69,9 @@ export class CartesiaLiveClient {
     contextId: string,
     continueStream = false
   ): void {
-    if (!this.isConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
     const payload = {
       context_id: contextId,
-      model_id: "sonic-multilingual",
+      model_id: "sonic-preview",
       transcript: text,
       voice: {
         mode: "id",
@@ -83,6 +84,11 @@ export class CartesiaLiveClient {
       },
       continue: continueStream,
     };
+
+    if (!this.isConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.pendingQueue.push(payload);
+      return;
+    }
 
     this.ws.send(JSON.stringify(payload));
   }
