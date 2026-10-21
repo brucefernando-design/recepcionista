@@ -14,6 +14,60 @@ export default function SettingsPage() {
   const [suggestions, setSuggestions] = useState<FaqSuggestion[]>([]);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestNote, setSuggestNote] = useState<string | null>(null);
+  const [scrapeUrl, setScrapeUrl] = useState("");
+  const [scraping, setScraping] = useState(false);
+  const [scrapingId, setScrapingId] = useState<string | null>(null);
+  const [scrapeError, setScrapeError] = useState<string | null>(null);
+
+  async function handleScrapeUrl(targetUrl?: string, existingId?: string) {
+    if (!selected) return;
+    const urlToFetch = (targetUrl ?? scrapeUrl).trim();
+    if (!urlToFetch) return;
+
+    if (existingId) setScrapingId(existingId);
+    else setScraping(true);
+    setScrapeError(null);
+
+    try {
+      const res = await fetch("/api/knowledge/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: urlToFetch, businessName: selected.name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al extraer la página web");
+
+      const currentSources = selected.webSources ?? [];
+      if (existingId) {
+        update({
+          webSources: currentSources.map((w) =>
+            w.id === existingId
+              ? { ...w, title: data.title, summary: data.summary, updatedAt: data.updatedAt }
+              : w
+          ),
+        });
+      } else {
+        update({
+          webSources: [
+            ...currentSources,
+            {
+              id: data.id,
+              url: data.url,
+              title: data.title,
+              summary: data.summary,
+              updatedAt: data.updatedAt,
+            },
+          ],
+        });
+        setScrapeUrl("");
+      }
+    } catch (err: any) {
+      setScrapeError(err?.message || "No se pudo extraer información de esa URL");
+    } finally {
+      setScraping(false);
+      setScrapingId(null);
+    }
+  }
 
   async function fetchSuggestions() {
     if (!selected) return;
@@ -238,6 +292,215 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Custom Prompt / System Instructions Card */}
+      <div className="card mt-6 border-brand-500/30 bg-gradient-to-br from-slate-900 via-slate-900 to-brand-950/20">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="font-semibold text-white">
+              {lang === "es"
+                ? "🧠 Prompt / Instrucciones Personalizadas de AIVA"
+                : "🧠 Custom System Prompt & Instructions"}
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
+              {lang === "es"
+                ? "Define libremente quién es tu empresa, qué sistemas o servicios ofreces, cómo debe responder AIVA y qué objetivo tiene en cada llamada."
+                : "Define who your business is, what you offer, AIVA's tone, and call goals."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const prodNames = (selected.menu ?? [])
+                .filter((m) => m.available !== false)
+                .map((m) => m.name)
+                .join(", ");
+              const svcNames = selected.services.map((s) => s.name).join(", ");
+              const template = `Somos ${selected.name}, una empresa de tecnología y soluciones digitales.\nOfrecemos los siguientes sistemas y servicios: ${
+                prodNames || svcNames || "Consultoría y demostraciones"
+              }.\n- Cuando un cliente pregunte por nuestros sistemas o servicios, explícalos de forma breve, clara y entusiasta usando nuestra base de conocimiento.\n- Tu objetivo principal es resolver sus dudas y ofrecerle agendar una cita o demostración personalizada (pidiendo día, hora, nombre y teléfono).\n- Si pide hablar con un asesor humano, transfiérelo de inmediato.`;
+              update({ customPrompt: template });
+            }}
+            className="rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-300 hover:bg-brand-500/20"
+          >
+            {lang === "es" ? "✨ Insertar plantilla sugerida" : "✨ Insert template"}
+          </button>
+        </div>
+        <textarea
+          value={selected.customPrompt ?? ""}
+          onChange={(e) => update({ customPrompt: e.target.value })}
+          rows={5}
+          placeholder={
+            lang === "es"
+              ? "Ejemplo: Somos Allia2, empresa desarrolladora de software. Ofrecemos TuKardex (control escolar/kardex), Cruceline, EasyConta (sistema contable), MiHotel (gestión hotelera) y Recepcionista de WhatsApp con IA. Nuestro objetivo es explicar brevemente cada solución y agendar una cita o demostración..."
+              : "Example: We are a software company offering demos and consultations..."
+          }
+          className="mt-3 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-200 placeholder:text-slate-600 focus:border-brand-500 focus:outline-none"
+        />
+      </div>
+
+      {/* Website Knowledge Base Card */}
+      <div className="card mt-6 border-indigo-500/30">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="font-semibold text-white">
+              {lang === "es"
+                ? "🌐 Base de Conocimiento desde Páginas Web (URLs)"
+                : "🌐 Website Knowledge Base (URLs)"}
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
+              {lang === "es"
+                ? "Ingresa la dirección de tus páginas web (ej. tukardex.com, mihotel.com). AIVA extraerá y resumirá toda la información para responder dudas al instante durante las llamadas."
+                : "Paste any website URL to automatically extract and summarize knowledge for live calls."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              update({
+                webSources: [
+                  ...(selected.webSources ?? []),
+                  {
+                    id: `web_${Date.now()}`,
+                    url: "https://",
+                    title: lang === "es" ? "Nota de conocimiento" : "Knowledge note",
+                    summary: "",
+                    updatedAt: new Date().toISOString(),
+                  },
+                ],
+              })
+            }
+            className="text-xs text-brand-400 hover:underline"
+          >
+            {lang === "es" ? "+ Agregar nota manual" : "+ Add manual note"}
+          </button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <input
+            type="text"
+            value={scrapeUrl}
+            onChange={(e) => setScrapeUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleScrapeUrl();
+              }
+            }}
+            placeholder={
+              lang === "es"
+                ? "https://tukardex.com o pega cualquier enlace de tu sitio web…"
+                : "https://example.com…"
+            }
+            className="min-w-60 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            disabled={scraping || !scrapeUrl.trim()}
+            onClick={() => void handleScrapeUrl()}
+            className="btn-primary !px-4 !py-2 text-xs disabled:opacity-50"
+          >
+            {scraping
+              ? lang === "es"
+                ? "⏳ Extrayendo información…"
+                : "⏳ Extracting…"
+              : lang === "es"
+              ? "🔍 Extraer información de la web"
+              : "🔍 Extract from web"}
+          </button>
+        </div>
+
+        {scrapeError && (
+          <p className="mt-2 text-xs text-amber-400">{scrapeError}</p>
+        )}
+
+        <div className="mt-4 space-y-4">
+          {(selected.webSources ?? []).length === 0 ? (
+            <p className="text-xs text-slate-500">
+              {lang === "es"
+                ? "Aún no has agregado páginas web. Pega una URL arriba y haz clic en «Extraer información de la web»."
+                : "No website sources added yet."}
+            </p>
+          ) : (
+            (selected.webSources ?? []).map((w, i) => (
+              <div
+                key={w.id}
+                className="rounded-xl border border-slate-800 bg-slate-950/60 p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-1 flex-wrap items-center gap-2">
+                    <input
+                      value={w.title}
+                      onChange={(e) => {
+                        const webSources = [...(selected.webSources ?? [])];
+                        webSources[i] = { ...w, title: e.target.value };
+                        update({ webSources });
+                      }}
+                      placeholder={lang === "es" ? "Título de la página / producto" : "Title"}
+                      className="min-w-44 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white"
+                    />
+                    <input
+                      value={w.url}
+                      onChange={(e) => {
+                        const webSources = [...(selected.webSources ?? [])];
+                        webSources[i] = { ...w, url: e.target.value };
+                        update({ webSources });
+                      }}
+                      placeholder="https://..."
+                      className="min-w-52 flex-1 rounded-lg border border-slate-800 bg-slate-900/70 px-2.5 py-1.5 text-xs text-brand-300"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={scrapingId === w.id || !w.url || w.url === "https://"}
+                      onClick={() => void handleScrapeUrl(w.url, w.id)}
+                      className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:border-brand-500 hover:text-white disabled:opacity-40"
+                    >
+                      {scrapingId === w.id
+                        ? lang === "es"
+                          ? "Actualizando…"
+                          : "Syncing…"
+                        : lang === "es"
+                        ? "🔄 Re-escanear web"
+                        : "🔄 Re-scan"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        update({
+                          webSources: (selected.webSources ?? []).filter(
+                            (x) => x.id !== w.id
+                          ),
+                        })
+                      }
+                      className="text-slate-500 hover:text-red-400"
+                      title={lang === "es" ? "Eliminar fuente web" : "Remove"}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  value={w.summary}
+                  onChange={(e) => {
+                    const webSources = [...(selected.webSources ?? [])];
+                    webSources[i] = { ...w, summary: e.target.value };
+                    update({ webSources });
+                  }}
+                  rows={4}
+                  placeholder={
+                    lang === "es"
+                      ? "Información extraída de la página web (puedes editarla o complementarla libremente)…"
+                      : "Extracted website knowledge…"
+                  }
+                  className="mt-2.5 w-full rounded-lg border border-slate-800 bg-slate-950 p-2.5 text-xs text-slate-300"
+                />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
       <div className="card mt-6">
         <h2 className="font-semibold">{lang === "es" ? "Idiomas en los que responde AIVA" : "Languages AIVA answers in"}</h2>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -341,7 +604,7 @@ export default function SettingsPage() {
       {selected.menu && (
         <div className="card mt-6">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">{lang === "es" ? "Menú de productos" : "Menu"}</h2>
+            <h2 className="font-semibold">{lang === "es" ? "Menú de productos / Catálogo" : "Menu"}</h2>
             <button
               className="text-sm text-brand-400 hover:underline"
               onClick={() =>
@@ -375,6 +638,16 @@ export default function SettingsPage() {
                     update({ menu });
                   }}
                   className="min-w-40 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                />
+                <input
+                  value={m.description ?? ""}
+                  placeholder={lang === "es" ? "Descripción breve (qué hace / qué incluye)…" : "Short description…"}
+                  onChange={(e) => {
+                    const menu = [...selected.menu!];
+                    menu[i] = { ...m, description: e.target.value };
+                    update({ menu });
+                  }}
+                  className="min-w-52 flex-[2] rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300"
                 />
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-slate-500">$</span>

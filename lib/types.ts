@@ -27,8 +27,20 @@ export interface Business {
   languages: string[];
   services: Service[];
   faqs: Faq[];
-  menu?: MenuItem[]; // restaurants only
+  menu?: MenuItem[]; // restaurants / products catalog
   rooms?: RoomType[]; // hotels only
+  // Free-form custom instructions / prompt configured by the business owner
+  customPrompt?: string;
+  // Extracted knowledge summaries from web URLs configured by the business owner
+  webSources?: WebKnowledgeSource[];
+}
+
+export interface WebKnowledgeSource {
+  id: string;
+  url: string;
+  title: string;
+  summary: string;
+  updatedAt: string;
 }
 
 export interface Service {

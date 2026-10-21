@@ -124,9 +124,13 @@ export class CallStreamingSession {
 
     // Play greeting
     setTimeout(() => {
-      const greeting = `Gracias por comunicarse con ${
-        this.business?.name || "Allia2"
-      }. Soy AIVA, su recepcionista virtual. ¿En qué le puedo ayudar hoy?`;
+      const bizName = this.business?.name || "Allia2";
+      let greeting = this.business?.greeting?.trim()
+        ? this.business.greeting.trim().replace(/\{name\}/gi, bizName)
+        : `Gracias por comunicarse con ${bizName}. Soy AIVA, su recepcionista virtual. ¿En qué le puedo ayudar hoy?`;
+      if (this.business?.announcement?.trim()) {
+        greeting = `${greeting} ${this.business.announcement.trim()}`;
+      }
       this.speakToCaller(greeting);
     }, 400);
   }

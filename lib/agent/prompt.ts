@@ -72,6 +72,19 @@ export function buildSystemPrompt(
         .join("\n")
     : "";
 
+  const webSources =
+    business.webSources && business.webSources.length > 0
+      ? "\n\n## Website Knowledge Base\n" +
+        business.webSources
+          .filter((w) => w.summary?.trim())
+          .map((w) => `### ${w.title} (${w.url})\n${w.summary.trim()}`)
+          .join("\n\n")
+      : "";
+
+  const customPromptSection = business.customPrompt?.trim()
+    ? `\n\n## Custom Business Instructions (HIGH PRIORITY)\n${business.customPrompt.trim()}`
+    : "";
+
   return `You are AIVA, the AI phone receptionist for ${business.name}, a ${business.type}.
 
 You are speaking with a customer on a live phone call. Your goals, in order:
@@ -86,8 +99,8 @@ You are speaking with a customer on a live phone call. Your goals, in order:
 - Phone: ${business.phone}
 - Languages you speak: ${langs}
 
-## Services
-${services}${menu}${rooms}
+## Services & Products
+${services}${menu}${rooms}${customPromptSection}${webSources}
 
 ## Frequently asked questions
 ${faqs}

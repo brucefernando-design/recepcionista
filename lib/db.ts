@@ -251,6 +251,21 @@ export async function getSuperadminStats() {
 }
 
 // ---------------- Businesses ----------------
+let businessColsEnsured = false;
+async function ensureBusinessColumns() {
+  if (businessColsEnsured) return;
+  businessColsEnsured = true;
+  try {
+    await query(
+      `ALTER TABLE businesses
+         ADD COLUMN IF NOT EXISTS custom_prompt TEXT,
+         ADD COLUMN IF NOT EXISTS web_sources JSONB DEFAULT '[]'::jsonb;`
+    );
+  } catch (err) {
+    console.warn("[db.ensureBusinessColumns]", err);
+  }
+}
+
 function mapBusiness(r: any): Business {
   return {
     id: r.id,
@@ -272,11 +287,14 @@ function mapBusiness(r: any): Business {
     faqs: r.faqs || [],
     menu: r.menu || undefined,
     rooms: r.rooms || undefined,
+    customPrompt: r.custom_prompt || undefined,
+    webSources: Array.isArray(r.web_sources) ? r.web_sources : [],
   };
 }
 
 export async function getBusinesses(): Promise<Business[]> {
   try {
+    await ensureBusinessColumns();
     const res = await query("SELECT * FROM businesses ORDER BY created_at ASC");
     if (res.rows && res.rows.length > 0) return res.rows.map(mapBusiness);
   } catch (err) {
@@ -287,6 +305,7 @@ export async function getBusinesses(): Promise<Business[]> {
 
 export async function getBusiness(id: string): Promise<Business | undefined> {
   try {
+    await ensureBusinessColumns();
     const res = await query("SELECT * FROM businesses WHERE id = $1", [id]);
     if (res.rows && res.rows[0]) return mapBusiness(res.rows[0]);
   } catch (err) {
@@ -296,9 +315,10 @@ export async function getBusiness(id: string): Promise<Business | undefined> {
 }
 
 export async function addBusiness(biz: Business): Promise<Business> {
+  await ensureBusinessColumns();
   await query(
-    `INSERT INTO businesses (id, name, type, phone, staff_phone, address, hours, languages, services, faqs, menu, rooms, holidays, announcement, greeting, webhook_url, twilio_sid, twilio_token, twilio_phone)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+    `INSERT INTO businesses (id, name, type, phone, staff_phone, address, hours, languages, services, faqs, menu, rooms, holidays, announcement, greeting, webhook_url, twilio_sid, twilio_token, twilio_phone, custom_prompt, web_sources)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
        type = EXCLUDED.type,
@@ -317,7 +337,9 @@ export async function addBusiness(biz: Business): Promise<Business> {
        webhook_url = EXCLUDED.webhook_url,
        twilio_sid = EXCLUDED.twilio_sid,
        twilio_token = EXCLUDED.twilio_token,
-       twilio_phone = EXCLUDED.twilio_phone;`,
+       twilio_phone = EXCLUDED.twilio_phone,
+       custom_prompt = EXCLUDED.custom_prompt,
+       web_sources = EXCLUDED.web_sources;`,
     [
       biz.id,
       biz.name,
@@ -338,6 +360,8 @@ export async function addBusiness(biz: Business): Promise<Business> {
       biz.twilioSid || null,
       biz.twilioToken || null,
       biz.twilioPhone || null,
+      biz.customPrompt || null,
+      JSON.stringify(biz.webSources || []),
     ]
   );
   return biz;

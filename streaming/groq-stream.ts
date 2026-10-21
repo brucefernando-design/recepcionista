@@ -78,15 +78,42 @@ export function buildVoiceTools(business: Business) {
 
 export function buildVoiceSystemPrompt(business: Business): string {
   const servicesList =
-    business.services.map((s) => `${s.name} (${s.durationMinutes} min${s.price ? `, $${s.price}` : ""})`).join(", ") ||
-    "Consulta general (30 min)";
-  const defaultService = business.services[0]?.name || "Consulta general";
-  const singleServiceRule =
-    business.services.length <= 1
+    business.services
+      .map((s) => `${s.name} (${s.durationMinutes} min${s.price ? `, $${s.price}` : ""})`)
+      .join(", ") || "Consulta general (30 min)";
+
+  const availableProducts = (business.menu || []).filter((m) => m.available !== false);
+  const productsList = availableProducts
+    .map(
+      (m) =>
+        `${m.name}${m.description ? ` (${m.description})` : ""}${
+          m.price && m.price > 0 ? `, $${m.price}` : ""
+        }`
+    )
+    .join(", ");
+
+  const defaultService =
+    business.services[0]?.name || availableProducts[0]?.name || "Consulta general";
+
+  const hasMultipleOfferings =
+    business.services.length > 1 || availableProducts.length > 0;
+
+  const offeringsSection = [
+    business.services.length > 0 ? `- Servicios disponibles: ${servicesList}.` : "",
+    productsList ? `- Productos / Sistemas disponibles: ${productsList}.` : "",
+    !hasMultipleOfferings
       ? `- Único servicio disponible: "${defaultService}". NUNCA preguntes qué servicio desea ni si es primera vez; usa siempre "${defaultService}" automáticamente.`
-      : `- Servicios: ${servicesList}.`;
+      : `- Si el cliente pregunta qué servicios o productos ofrecemos, menciónalos con naturalidad (tanto los Servicios como los Productos/Sistemas). Al agendar cita, si no especifica uno, usa "${defaultService}".`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const faqs = business.faqs.map((f) => `${f.question}: ${f.answer}`).join(" | ");
+
+  const webKnowledge = (business.webSources || [])
+    .filter((w) => w.summary && w.summary.trim().length > 0)
+    .map((w) => `• [${w.title} (${w.url})]: ${w.summary.trim()}`)
+    .join("\n");
 
   const dayNames = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
   const now = new Date();
@@ -101,15 +128,24 @@ export function buildVoiceSystemPrompt(business: Business): string {
 
   return `Eres AIVA, recepcionista telefónica de ${business.name} (${business.type}).
 Horario: ${business.hours}. Dirección: ${business.address}. Teléfono: ${business.phone}.
-${singleServiceRule}
-${faqs ? `Preguntas frecuentes: ${faqs}` : ""}
-Calendario de referencia: ${nextDays.join(", ")}.
+${business.announcement ? `Aviso importante para todos los clientes: ${business.announcement}` : ""}
+${offeringsSection}
+${faqs ? `Preguntas frecuentes (FAQs): ${faqs}` : ""}
+${
+  business.customPrompt
+    ? `\nINSTRUCCIONES Y PROMPT PERSONALIZADO DEL NEGOCIO (SIGUE ESTO CON PRIORIDAD):\n${business.customPrompt.trim()}\n`
+    : ""
+}${
+  webKnowledge
+    ? `\nBASE DE CONOCIMIENTO DE SITIOS WEB DEL NEGOCIO:\n${webKnowledge}\n`
+    : ""
+}Calendario de referencia: ${nextDays.join(", ")}.
 
 REGLAS ESTRICTAS DE LLAMADA EN VIVO:
 1. Responde SIEMPRE en español natural, cálido y breve (máximo 1 o 2 oraciones cortas, sin listas ni símbolos).
 2. HORA HABLADA: Al hablar con el cliente usa SIEMPRE formato natural de 12 horas ("a la 1 de la tarde", "a las 4 de la tarde", "a las 10 de la mañana"). Si pide "a la 1", "a las 2", "a las 3", "a las 4", "a las 5", entiende SIEMPRE horario de la tarde (13:00 a 17:00). En las herramientas pasa formato 24h ("13:00", "16:00").
 3. FLUJO DE CITA DIRECTO: Para agendar solo necesitas 3 cosas: (a) fecha y hora, (b) nombre del cliente, (c) teléfono del cliente.
-4. Si aún NO tienes nombre o teléfono y el cliente propone fecha/hora, usa \`check_availability\`. Pero en cuanto YA tengas los 4 datos (fecha, hora, nombre y teléfono), NO llames a \`check_availability\`: ejecuta DIRECTAMENTE \`book_appointment\` (con \`service_name: "${defaultService}"\`), ya que \`book_appointment\` verifica la disponibilidad y guarda la cita en un solo paso. NUNCA hagas preguntas extra como "¿es tu primera visita?".
+4. Si aún NO tienes nombre o teléfono y el cliente propone fecha/hora, usa \`check_availability\`. Pero en cuanto YA tengas los 4 datos (fecha, hora, nombre y teléfono), NO llames a \`check_availability\`: ejecuta DIRECTAMENTE \`book_appointment\` (con \`service_name\` del servicio/producto elegido o "${defaultService}"), ya que \`book_appointment\` verifica la disponibilidad y guarda la cita en un solo paso. NUNCA hagas preguntas extra como "¿es tu primera visita?".
 5. Nunca digas que una cita quedó agendada sin haber llamado primero a \`book_appointment\`.
 6. TRANSFERIR A HUMANO: Si el cliente pide hablar con una persona, asesor o humano ("transfiéreme", "pásame con alguien"), llama INMEDIATAMENTE a \`transfer_to_human\` y dile brevemente que en este momento estás transfiriendo su llamada.
 7. COLGAR / DESPEDIDA: Cuando el cliente se despida ("gracias, hasta luego", "eso es todo", "adiós") o te pida colgar la llamada ("cuelga", "ya puedes colgar"), llama SIEMPRE a \`end_call\` y despídete con una frase breve y cálida.`;
