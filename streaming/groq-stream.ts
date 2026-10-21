@@ -9,21 +9,34 @@ const GROQ_MODELS = [
   "openai/gpt-oss-120b",
 ];
 
+// Track per-model rate limit cooldowns so we don't waste latency hitting a rate-limited model
+const modelCooldownUntil = new Map<string, number>();
+
 function combineSignals(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);
   return signal ? (AbortSignal as any).any([signal, timeout]) : timeout;
 }
 
-const VOICE_TOOLS = new Set([
+const CORE_VOICE_TOOLS = new Set([
   "check_availability",
   "book_appointment",
+  "transfer_to_human",
+]);
+
+const EXTENDED_VOICE_TOOLS = new Set([
   "find_free_slots",
   "request_callback",
   "lookup_my_appointments",
   "cancel_appointment",
   "reschedule_appointment",
-  "transfer_to_human",
 ]);
+
+function normalizeSearch(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
 function shorten(text: string | undefined, max: number): string {
   if (!text) return "";
@@ -36,20 +49,31 @@ function compactSchema(schema: any): any {
   if (Array.isArray(schema)) return schema.map(compactSchema);
   const out: any = {};
   for (const [k, v] of Object.entries(schema)) {
-    if (k === "description" && typeof v === "string") out[k] = shorten(v, 60);
+    if (k === "description" && typeof v === "string") out[k] = shorten(v, 55);
     else out[k] = compactSchema(v);
   }
   return out;
 }
 
-export function buildVoiceTools(business: Business) {
+export function buildVoiceTools(business: Business, contextText = "") {
+  const norm = normalizeSearch(contextText);
+  const needsExtended =
+    /(cancel|cambi|reagend|mov|modific|mi cita|mis citas|tengo cita|recado|llamen|devolv|horarios libres|espacios)/i.test(
+      norm
+    );
+
   const tools = agentTools
-    .filter((t) => VOICE_TOOLS.has(t.name) || (t.name === "take_order" && business.type === "restaurant"))
+    .filter(
+      (t) =>
+        CORE_VOICE_TOOLS.has(t.name) ||
+        (needsExtended && EXTENDED_VOICE_TOOLS.has(t.name)) ||
+        (t.name === "take_order" && business.type === "restaurant")
+    )
     .map((t) => ({
       type: "function",
       function: {
         name: t.name,
-        description: shorten(t.description, 120),
+        description: shorten(t.description, 100),
         parameters: compactSchema(t.input_schema),
       },
     }));
@@ -76,7 +100,52 @@ export function buildVoiceTools(business: Business) {
   return tools;
 }
 
-export function buildVoiceSystemPrompt(business: Business): string {
+function buildWebKnowledgeSection(business: Business, contextText: string): string {
+  const sources = (business.webSources || []).filter(
+    (w) => w.summary && w.summary.trim().length > 0
+  );
+  if (sources.length === 0) return "";
+
+  const normCtx = normalizeSearch(contextText);
+
+  return sources
+    .map((w) => {
+      const cleanSummary = w.summary.replace(/\s+/g, " ").trim();
+      // Extract distinctive keywords from title and URL subdomain/path
+      const rawTokens = normalizeSearch(`${w.title} ${w.url}`)
+        .split(/[^a-z0-9]+/)
+        .filter(
+          (tok) =>
+            tok.length >= 4 &&
+            !["https", "http", "html", "para", "mexico", "allia2", "sistema", "plataforma"].includes(tok)
+        );
+
+      // Include phonetic aliases for common names (e.g. tukardex -> cardex/kardex, cruceline -> cruce, easyconta -> conta)
+      const aliases = [...rawTokens];
+      if (rawTokens.some((t) => t.includes("kardex"))) aliases.push("cardex", "kardex", "colegio", "escolar");
+      if (rawTokens.some((t) => t.includes("cruce") || t.includes("tms")))
+        aliases.push("cruce", "flete", "transporte", "carta porte");
+      if (rawTokens.some((t) => t.includes("conta")))
+        aliases.push("conta", "contable", "contador", "nomina", "impuesto");
+      if (rawTokens.some((t) => t.includes("hotel"))) aliases.push("hotel", "restaurante", "habitacion");
+      if (rawTokens.some((t) => t.includes("whatsapp") || t.includes("wai")))
+        aliases.push("whatsapp", "asistente");
+
+      const isMatched =
+        aliases.some((kw) => normCtx.includes(kw)) ||
+        /(precio|plan|costo|cuanto cuesta|mensualidad|prueba gratis|que incluye|modulos)/i.test(normCtx);
+
+      if (isMatched) {
+        return `• [${w.title} (${w.url})]: ${cleanSummary.slice(0, 750)}`;
+      }
+      // Compact 1-line overview when not actively discussing this specific site
+      const brief = cleanSummary.slice(0, 190) + (cleanSummary.length > 190 ? "…" : "");
+      return `• [${w.title} (${w.url})]: ${brief}`;
+    })
+    .join("\n");
+}
+
+export function buildVoiceSystemPrompt(business: Business, contextText = ""): string {
   const servicesList =
     business.services
       .map((s) => `${s.name} (${s.durationMinutes} min${s.price ? `, $${s.price}` : ""})`)
@@ -109,11 +178,7 @@ export function buildVoiceSystemPrompt(business: Business): string {
     .join("\n");
 
   const faqs = business.faqs.map((f) => `${f.question}: ${f.answer}`).join(" | ");
-
-  const webKnowledge = (business.webSources || [])
-    .filter((w) => w.summary && w.summary.trim().length > 0)
-    .map((w) => `• [${w.title} (${w.url})]: ${w.summary.trim()}`)
-    .join("\n");
+  const webKnowledge = buildWebKnowledgeSection(business, contextText);
 
   const dayNames = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
   const now = new Date();
@@ -144,8 +209,8 @@ ${
 REGLAS ESTRICTAS DE LLAMADA EN VIVO:
 1. Responde SIEMPRE en español natural, cálido y breve (máximo 1 o 2 oraciones cortas, sin listas ni símbolos).
 2. HORA HABLADA: Al hablar con el cliente usa SIEMPRE formato natural de 12 horas ("a la 1 de la tarde", "a las 4 de la tarde", "a las 10 de la mañana"). Si pide "a la 1", "a las 2", "a las 3", "a las 4", "a las 5", entiende SIEMPRE horario de la tarde (13:00 a 17:00). En las herramientas pasa formato 24h ("13:00", "16:00").
-3. FLUJO DE CITA DIRECTO: Para agendar solo necesitas 3 cosas: (a) fecha y hora, (b) nombre del cliente, (c) teléfono del cliente.
-4. Si aún NO tienes nombre o teléfono y el cliente propone fecha/hora, usa \`check_availability\`. Pero en cuanto YA tengas los 4 datos (fecha, hora, nombre y teléfono), NO llames a \`check_availability\`: ejecuta DIRECTAMENTE \`book_appointment\` (con \`service_name\` del servicio/producto elegido o "${defaultService}"), ya que \`book_appointment\` verifica la disponibilidad y guarda la cita en un solo paso. NUNCA hagas preguntas extra como "¿es tu primera visita?".
+3. FLUJO DE CITA: Para llamar a \`book_appointment\` necesitas: (a) fecha y hora, (b) nombre del cliente, (c) teléfono del cliente. Si las instrucciones personalizadas del negocio piden además correo electrónico o confirmar teléfono y correo, pídelos y confírmalos siempre con amabilidad.
+4. Usa \`check_availability\` SOLO cuando el cliente proponga una fecha/hora nueva. Si ya verificaste el horario y el cliente te dice su nombre ("Fernando Sánchez"), teléfono o correo, NO vuelvas a llamar a \`check_availability\`: agradécele por su nombre, pídele el dato que falte, y en cuanto tengas fecha, hora, nombre y teléfono ejecuta \`book_appointment\` (con \`service_name\` del servicio/producto elegido o "${defaultService}").
 5. Nunca digas que una cita quedó agendada sin haber llamado primero a \`book_appointment\`.
 6. TRANSFERIR A HUMANO: Si el cliente pide hablar con una persona, asesor o humano ("transfiéreme", "pásame con alguien"), llama INMEDIATAMENTE a \`transfer_to_human\` y dile brevemente que en este momento estás transfiriendo su llamada.
 7. COLGAR / DESPEDIDA: Cuando el cliente se despida ("gracias, hasta luego", "eso es todo", "adiós") o te pida colgar la llamada ("cuelga", "ya puedes colgar"), llama SIEMPRE a \`end_call\` y despídete con una frase breve y cálida.`;
@@ -156,11 +221,17 @@ async function groqFetchWithFailover(
   baseBody: Record<string, any>,
   signal: AbortSignal | undefined
 ): Promise<Response> {
+  const now = Date.now();
   const uniqueModels = Array.from(new Set(GROQ_MODELS));
+  // Prefer models not currently on rate-limit cooldown
+  const readyModels = uniqueModels.filter((m) => (modelCooldownUntil.get(m) || 0) <= now);
+  const cooldownModels = uniqueModels.filter((m) => (modelCooldownUntil.get(m) || 0) > now);
+  const orderedModels = [...readyModels, ...cooldownModels];
+
   let lastRes: Response | undefined;
   let lastErr: any;
 
-  for (const model of uniqueModels) {
+  for (const model of orderedModels) {
     for (let attempt = 0; attempt < 2; attempt++) {
       if (signal?.aborted) {
         throw new DOMException("Aborted", "AbortError");
@@ -168,17 +239,36 @@ async function groqFetchWithFailover(
       const payload: Record<string, any> = { ...baseBody, model };
       if (model.startsWith("qwen/")) {
         payload.reasoning_effort = "none";
+      } else if (model.startsWith("openai/")) {
+        payload.reasoning_effort = "low";
       }
       try {
-        const res = await fetch(GROQ_API_URL, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey.trim()}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-          signal: combineSignals(signal, 4500),
-        });
+        // Timeout applies only until response headers arrive, so long streamed replies are never cut mid-sentence.
+        const timeoutCtl = new AbortController();
+        const timer = setTimeout(() => timeoutCtl.abort(), 4500);
+        const fetchSignal: AbortSignal = signal
+          ? (AbortSignal as any).any([signal, timeoutCtl.signal])
+          : timeoutCtl.signal;
+        let res: Response;
+        try {
+          res = await fetch(GROQ_API_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey.trim()}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+            signal: fetchSignal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+
+        const remTokens = parseInt(res.headers.get("x-ratelimit-remaining-tokens") || "99999", 10);
+        if (!isNaN(remTokens) && remTokens < 1600) {
+          // Proactively rotate away from this model for 20s before it hits 429
+          modelCooldownUntil.set(model, Date.now() + 20000);
+        }
 
         if (res.ok) return res;
         lastRes = res;
@@ -187,8 +277,13 @@ async function groqFetchWithFailover(
         const errText = await res.text().catch(() => "");
         console.warn(`[Groq ${model}] status=${status} attempt=${attempt + 1}: ${errText.slice(0, 180)}`);
 
-        // On 429 rate-limit or 400 tool_use_failed or 5xx, immediately switch to next model!
-        if (status === 429 || status === 400 || status >= 500) {
+        if (status === 429) {
+          // If daily token limit (TPD) is reached, cooldown for 10 minutes; if per-minute (TPM), cooldown for 25s
+          const isDailyLimit = errText.includes("tokens per day") || errText.includes("(TPD)");
+          modelCooldownUntil.set(model, Date.now() + (isDailyLimit ? 600000 : 25000));
+          break;
+        }
+        if (status === 400 || status >= 500) {
           break;
         }
         return new Response(errText, { status });
@@ -222,12 +317,16 @@ export async function streamGroqResponse(
   callbacks: GroqStreamCallbacks,
   signal?: AbortSignal
 ): Promise<void> {
-  const systemPrompt = buildVoiceSystemPrompt(business);
-  const groqTools = buildVoiceTools(business);
+  const recentContext = [
+    ...history.slice(-4).map((t) => t.content),
+    userMessage,
+  ].join(" ");
+  const systemPrompt = buildVoiceSystemPrompt(business, recentContext);
+  const groqTools = buildVoiceTools(business, recentContext);
 
   const messages: any[] = [
     { role: "system", content: systemPrompt },
-    ...history.slice(-10).map((t) => ({ role: t.role, content: t.content })),
+    ...history.slice(-8).map((t) => ({ role: t.role, content: t.content })),
     { role: "user", content: userMessage },
   ];
 
@@ -239,7 +338,7 @@ export async function streamGroqResponse(
         tools: groqTools,
         stream: true,
         temperature: 0.2,
-        max_tokens: 220,
+        max_tokens: 550,
       },
       signal
     );
@@ -326,6 +425,38 @@ export async function streamGroqResponse(
       callbacks.onSentenceClause(sentenceBuffer.trim());
     }
 
+    // Safety net: if a reasoning model returned empty content and no tool call, do a fast non-tool recovery call
+    if (fullReply.trim().length === 0 && !toolCallBuffer) {
+      const recoveryRes = await groqFetchWithFailover(
+        apiKey,
+        {
+          messages: [
+            {
+              role: "system",
+              content: `Eres AIVA, recepcionista telefónica de ${business.name}. Responde SIEMPRE en español natural y breve (1 o 2 oraciones cortas). ${
+                business.customPrompt ? business.customPrompt.slice(0, 450) : ""
+              }`,
+            },
+            ...messages.slice(1).slice(-6),
+          ],
+          stream: false,
+          temperature: 0.2,
+          max_tokens: 450,
+        },
+        signal
+      );
+      if (recoveryRes.ok) {
+        const recData = await recoveryRes.json();
+        const recText = (recData.choices?.[0]?.message?.content || "")
+          .replace(/<think>[\s\S]*?<\/think>/g, "")
+          .trim();
+        if (recText) {
+          callbacks.onSentenceClause(recText);
+          fullReply = recText;
+        }
+      }
+    }
+
     // Handle tool call if model requested one (up to 2 chained tool calls: e.g. check_availability -> book_appointment)
     let currentToolCall = toolCallBuffer;
     for (let step = 0; step < 2 && currentToolCall && currentToolCall.name; step++) {
@@ -390,14 +521,26 @@ export async function streamGroqResponse(
 
       currentToolCall = null;
 
+      // Use a compact system prompt for the follow-up turn so we don't burn 3,000+ tokens re-sending all websites
+      const compactFollowUpSystem = `Eres AIVA, recepcionista telefónica de ${business.name}. Responde SIEMPRE en español natural y breve (1 o 2 oraciones cortas, sin símbolos ni asteriscos), usando formato de 12 horas ("a las 2 de la tarde"). ${
+        business.customPrompt ? business.customPrompt.slice(0, 450) : ""
+      }`;
+      const followUpMessages = [
+        { role: "system", content: compactFollowUpSystem },
+        ...messages.slice(1).slice(-6),
+      ];
+
       const followUpRes = await groqFetchWithFailover(
         apiKey,
         {
-          messages,
-          tools: step === 0 && toolName !== "end_call" && toolName !== "transfer_to_human" ? groqTools : undefined,
+          messages: followUpMessages,
+          tools:
+            step === 0 && toolName === "check_availability"
+              ? groqTools.filter((t) => t.function.name === "book_appointment")
+              : undefined,
           stream: false,
           temperature: 0.2,
-          max_tokens: 200,
+          max_tokens: 450,
         },
         signal
       );
@@ -425,8 +568,12 @@ export async function streamGroqResponse(
           reply = `Muchas gracias por comunicarse con ${business.name}. ¡Que tenga un excelente día, hasta luego!`;
         } else if (toolName === "transfer_to_human") {
           reply = "Con mucho gusto, en este momento estoy transfiriendo su llamada con un asesor. Un momento por favor.";
+        } else if (toolName === "book_appointment") {
+          reply = `¡Perfecto${args.customer_name ? `, ${args.customer_name}` : ""}! Tu cita ha quedado registrada para el ${args.date || "día solicitado"} a las ${args.time || "hora indicada"}. ¿Me confirmas tu correo electrónico o puedo ayudarte en algo más?`;
+        } else if (toolName === "check_availability") {
+          reply = "Ese horario está disponible. Para agendar tu cita, ¿me podrías indicar tu nombre completo, teléfono y correo electrónico?";
         } else {
-          reply = "Su solicitud ha sido procesada. ¿Le puedo ayudar en algo más?";
+          reply = "Listo, ha quedado registrado. ¿Le puedo ayudar en algo más?";
         }
       }
       callbacks.onSentenceClause(reply);

@@ -283,10 +283,12 @@ export class CallStreamingSession {
       {
         onSentenceClause: (clause) => {
           if (seq !== this.turnSeq || signal.aborted) return;
-          console.log("[Groq clause -> Cartesia]:", clause);
+          const cleanClause = clause.replace(/\*\*|\*|#|`/g, "").trim();
+          if (!cleanClause) return;
+          console.log("[Groq clause -> Cartesia]:", cleanClause);
           spoke = true;
-          this.partialReply += (this.partialReply ? " " : "") + clause;
-          this.cartesia?.sendText(clause, contextId, true);
+          this.partialReply += (this.partialReply ? " " : "") + cleanClause;
+          this.cartesia?.sendText(cleanClause, contextId, true);
         },
         onToolEvent: (event) => {
           console.log("[Session tool event]:", event);
@@ -343,7 +345,9 @@ export class CallStreamingSession {
     this.inFlightUserText = "";
 
     if ((errored || !spoke) && !shouldCloseAfterPlayback) {
-      // Never leave the caller in silence.
+      // Never leave the caller in silence, and preserve the caller's message in history so names/phones aren't lost.
+      this.history.push({ role: "user", content: userText });
+      this.history.push({ role: "assistant", content: FALLBACK_REPLY });
       this.transcript.push({ role: "aiva", text: FALLBACK_REPLY, timestamp: new Date().toISOString() });
       this.cartesia?.sendText(FALLBACK_REPLY, contextId, false);
       return;
