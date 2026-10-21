@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       req.nextUrl.searchParams.get("businessId") ?? "biz_clinic";
     const business = await getBusiness(businessId);
     const call = callSid ? await getCall(callSid) : undefined;
-    const lang = call?.language ?? "en";
+    const lang = call?.language ?? (business?.languages.includes("es") ? "es" : "en");
     const actionUrl = `/api/voice/respond?businessId=${businessId}`;
 
     if (!business) {

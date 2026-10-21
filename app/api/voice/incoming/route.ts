@@ -51,14 +51,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Returning callers get greeted by name, in the language they last spoke.
+    // Greeting language: if the business supports Spanish, always greet in Spanish by default
     const known = await getCallerGreetingInfo(business.id, from);
-    const lang =
-      known.language && business.languages.includes(known.language)
-        ? known.language
-        : business.languages.includes("es")
-        ? "es"
-        : "en";
+    const lang = business.languages.includes("es")
+      ? "es"
+      : (known.language && business.languages.includes(known.language))
+      ? known.language
+      : business.languages[0] || "en";
 
     await upsertCall({
       id: callSid,
