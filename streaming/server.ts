@@ -218,4 +218,17 @@ server.listen(PORT, async () => {
   // Prefetch API keys at startup
   await getApiKeys();
   console.log("✅ API keys prefetched from database");
+
+  // Keep Render Free Tier awake 24/7 by pinging the public ingress URL every 4 minutes
+  const publicUrl =
+    process.env.RENDER_EXTERNAL_URL || "https://recepcionista.onrender.com";
+  setInterval(async () => {
+    try {
+      await fetch(`${publicUrl}/health`, {
+        headers: { "User-Agent": "AIVA-KeepAlive/1.0" },
+      });
+    } catch (err) {
+      // Ignore transient network errors
+    }
+  }, 4 * 60 * 1000);
 });
