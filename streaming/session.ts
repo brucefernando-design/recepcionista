@@ -13,6 +13,32 @@ export interface StreamSessionConfig {
   groqKey: string;
 }
 
+export interface PendingCallAction {
+  type: "hangup" | "transfer";
+  to?: string;
+}
+
+export const pendingCallActions = new Map<string, PendingCallAction>();
+
+export function normalizePhoneToE164(raw: string): string {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("+")) {
+    return "+" + trimmed.replace(/\D/g, "");
+  }
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 12 && digits.startsWith("52")) return `+${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  if (digits.length === 10) {
+    // 867 (Nuevo Laredo), 81 (Monterrey), 55 (CDMX), 33 (GDL), etc. -> +52; US area codes like 956 -> +1
+    const usAreaCodes = new Set(["956", "210", "512", "713", "281", "832", "214", "469", "972", "361", "915", "817"]);
+    const area = digits.slice(0, 3);
+    return usAreaCodes.has(area) ? `+1${digits}` : `+52${digits}`;
+  }
+  return `+${digits}`;
+}
+
 const FALLBACK_REPLY = "Disculpe, no alcancé a escucharle bien. ¿Me lo podría repetir, por favor?";
 
 export class CallStreamingSession {
@@ -30,6 +56,10 @@ export class CallStreamingSession {
   private transcript: CallLog["transcript"] = [];
   private history: ChatTurn[] = [];
   private currentContextId = "";
+  private callStartedAt = new Date().toISOString();
+  private callOutcome: CallLog["outcome"] = "faq_answered";
+  private closingCall = false;
+  private cleanedUp = false;
 
   // Playback tracking: Twilio buffers audio ahead of real time, so we estimate
   // when the caller will actually finish hearing what we already sent.
@@ -144,6 +174,7 @@ export class CallStreamingSession {
   }
 
   private handleBargeIn(): void {
+    if (this.closingCall) return;
     // Only interrupt when the caller is really hearing us. Never kill a reply
     // that is still being generated (that caused silent, unanswered turns).
     if (!this.isAudioPlaying()) return;
@@ -173,7 +204,26 @@ export class CallStreamingSession {
     }
   }
 
+  private scheduleCloseAfterPlayback(): void {
+    if (this.closingCall) return;
+    this.closingCall = true;
+    const check = () => {
+      const remaining = this.playbackEndsAt - Date.now();
+      if (remaining > 150) {
+        setTimeout(check, Math.min(remaining + 250, 1000));
+        return;
+      }
+      console.log("[Session] Closing Twilio WS to execute post-stream action (hangup/transfer)");
+      if (this.twilioWs.readyState === WebSocket.OPEN) {
+        this.twilioWs.close();
+      }
+    };
+    // Give Cartesia ~800ms to stream the final audio chunks to Twilio first
+    setTimeout(check, 800);
+  }
+
   private async handleUserSpeech(userTextRaw: string): Promise<void> {
+    if (this.closingCall) return;
     let userText = userTextRaw;
 
     // If a reply is still being generated and no audio has been heard yet,
@@ -204,6 +254,7 @@ export class CallStreamingSession {
 
     let spoke = false;
     let errored = false;
+    let shouldCloseAfterPlayback = false;
 
     // NOTE: the current user message is passed separately; history only holds past turns.
     await streamGroqResponse(
@@ -219,11 +270,39 @@ export class CallStreamingSession {
           this.partialReply += (this.partialReply ? " " : "") + clause;
           this.cartesia?.sendText(clause, contextId, true);
         },
+        onToolEvent: (event) => {
+          console.log("[Session tool event]:", event);
+          if (
+            event === "appointment_booked" ||
+            event === "callback_scheduled" ||
+            event === "order_taken"
+          ) {
+            this.callOutcome = event;
+          } else if (event === "transferred") {
+            this.callOutcome = "transferred";
+            const target = normalizePhoneToE164(
+              this.business?.transferPhone || this.business?.phone || ""
+            );
+            if (this.callSid && target) {
+              pendingCallActions.set(this.callSid, { type: "transfer", to: target });
+            } else if (this.callSid) {
+              pendingCallActions.set(this.callSid, { type: "hangup" });
+            }
+            shouldCloseAfterPlayback = true;
+          } else if (event === "call_ended") {
+            if (this.callSid) {
+              pendingCallActions.set(this.callSid, { type: "hangup" });
+            }
+            shouldCloseAfterPlayback = true;
+          }
+        },
         onComplete: (reply) => {
           if (seq !== this.turnSeq || signal.aborted) return;
-          this.transcript.push({ role: "aiva", text: reply, timestamp: new Date().toISOString() });
-          this.history.push({ role: "user", content: userText });
-          this.history.push({ role: "assistant", content: reply });
+          if (reply) {
+            this.transcript.push({ role: "aiva", text: reply, timestamp: new Date().toISOString() });
+            this.history.push({ role: "user", content: userText });
+            this.history.push({ role: "assistant", content: reply });
+          }
         },
         onError: (err) => {
           errored = true;
@@ -238,7 +317,7 @@ export class CallStreamingSession {
     this.generating = false;
     this.inFlightUserText = "";
 
-    if (errored && !spoke) {
+    if ((errored || !spoke) && !shouldCloseAfterPlayback) {
       // Never leave the caller in silence.
       this.transcript.push({ role: "aiva", text: FALLBACK_REPLY, timestamp: new Date().toISOString() });
       this.cartesia?.sendText(FALLBACK_REPLY, contextId, false);
@@ -247,6 +326,10 @@ export class CallStreamingSession {
 
     // Close the Cartesia context so it flushes remaining audio.
     this.cartesia?.sendText("", contextId, false);
+
+    if (shouldCloseAfterPlayback) {
+      this.scheduleCloseAfterPlayback();
+    }
   }
 
   public speakToCaller(text: string): void {
@@ -279,6 +362,8 @@ export class CallStreamingSession {
   }
 
   public async cleanup(): Promise<void> {
+    if (this.cleanedUp) return;
+    this.cleanedUp = true;
     console.log("[Call ended] Saving transcript to database...");
     if (this.speechDebounceTimer) clearTimeout(this.speechDebounceTimer);
     if (this.abortController) this.abortController.abort();
@@ -292,9 +377,9 @@ export class CallStreamingSession {
         callerPhone: this.callerPhone || "unknown",
         language: "es",
         channel: "phone",
-        startedAt: new Date().toISOString(),
+        startedAt: this.callStartedAt,
         endedAt: new Date().toISOString(),
-        outcome: "faq_answered",
+        outcome: this.callOutcome,
         transcript: this.transcript,
       });
     }

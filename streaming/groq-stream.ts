@@ -22,6 +22,7 @@ const VOICE_TOOLS = new Set([
   "lookup_my_appointments",
   "cancel_appointment",
   "reschedule_appointment",
+  "transfer_to_human",
 ]);
 
 function shorten(text: string | undefined, max: number): string {
@@ -42,7 +43,7 @@ function compactSchema(schema: any): any {
 }
 
 export function buildVoiceTools(business: Business) {
-  return agentTools
+  const tools = agentTools
     .filter((t) => VOICE_TOOLS.has(t.name) || (t.name === "take_order" && business.type === "restaurant"))
     .map((t) => ({
       type: "function",
@@ -52,6 +53,27 @@ export function buildVoiceTools(business: Business) {
         parameters: compactSchema(t.input_schema),
       },
     }));
+
+  tools.push({
+    type: "function",
+    function: {
+      name: "end_call",
+      description:
+        "Hang up the phone call when the conversation is finished, the caller says goodbye, or asks you to hang up.",
+      parameters: {
+        type: "object",
+        properties: {
+          reason: {
+            type: "string",
+            description: "Reason for ending the call",
+          },
+        },
+        required: ["reason"],
+      },
+    },
+  });
+
+  return tools;
 }
 
 export function buildVoiceSystemPrompt(business: Business): string {
@@ -88,7 +110,9 @@ REGLAS ESTRICTAS DE LLAMADA EN VIVO:
 2. HORA HABLADA: Al hablar con el cliente usa SIEMPRE formato natural de 12 horas ("a la 1 de la tarde", "a las 4 de la tarde", "a las 10 de la mañana"). Si pide "a la 1", "a las 2", "a las 3", "a las 4", "a las 5", entiende SIEMPRE horario de la tarde (13:00 a 17:00). En las herramientas pasa formato 24h ("13:00", "16:00").
 3. FLUJO DE CITA DIRECTO: Para agendar solo necesitas 3 cosas: (a) fecha y hora, (b) nombre del cliente, (c) teléfono del cliente.
 4. Si aún NO tienes nombre o teléfono y el cliente propone fecha/hora, usa \`check_availability\`. Pero en cuanto YA tengas los 4 datos (fecha, hora, nombre y teléfono), NO llames a \`check_availability\`: ejecuta DIRECTAMENTE \`book_appointment\` (con \`service_name: "${defaultService}"\`), ya que \`book_appointment\` verifica la disponibilidad y guarda la cita en un solo paso. NUNCA hagas preguntas extra como "¿es tu primera visita?".
-5. Nunca digas que una cita quedó agendada sin haber llamado primero a \`book_appointment\`.`;
+5. Nunca digas que una cita quedó agendada sin haber llamado primero a \`book_appointment\`.
+6. TRANSFERIR A HUMANO: Si el cliente pide hablar con una persona, asesor o humano ("transfiéreme", "pásame con alguien"), llama INMEDIATAMENTE a \`transfer_to_human\` y dile brevemente que en este momento estás transfiriendo su llamada.
+7. COLGAR / DESPEDIDA: Cuando el cliente se despida ("gracias, hasta luego", "eso es todo", "adiós") o te pida colgar la llamada ("cuelga", "ya puedes colgar"), llama SIEMPRE a \`end_call\` y despídete con una frase breve y cálida.`;
 }
 
 async function groqFetchWithFailover(
@@ -101,13 +125,17 @@ async function groqFetchWithFailover(
 
   for (const model of uniqueModels) {
     for (let attempt = 0; attempt < 2; attempt++) {
+      const payload: Record<string, any> = { ...baseBody, model };
+      if (model.startsWith("qwen/")) {
+        payload.reasoning_effort = "none";
+      }
       const res = await fetch(GROQ_API_URL, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey.trim()}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ ...baseBody, model }),
+        body: JSON.stringify(payload),
         signal: combineSignals(signal, 14000),
       });
 
@@ -133,6 +161,7 @@ export interface GroqStreamCallbacks {
   onSentenceClause: (clause: string) => void;
   onComplete: (fullReply: string) => void;
   onError: (err: any) => void;
+  onToolEvent?: (event: string, data?: any) => void;
 }
 
 export async function streamGroqResponse(
@@ -259,18 +288,35 @@ export async function streamGroqResponse(
         args.service_name = business.services[0]?.name || "Consulta general";
       }
 
-      let toolOutcome: { result: string };
+      const toolName = currentToolCall.name;
+      let toolOutcome: { result: string; event?: string; data?: any };
       try {
-        console.log("[Tool call]:", currentToolCall.name, JSON.stringify(args));
-        toolOutcome = await executeTool(business, currentToolCall.name, args, {
-          language: "es",
-        });
+        console.log("[Tool call]:", toolName, JSON.stringify(args));
+        if (toolName === "end_call") {
+          toolOutcome = {
+            result: "Llamada lista para finalizar. Despídete brevemente del cliente.",
+            event: "call_ended",
+          };
+        } else {
+          toolOutcome = await executeTool(business, toolName, args, {
+            language: "es",
+          });
+        }
         console.log("[Tool result]:", String(toolOutcome.result).slice(0, 200));
+        if (toolOutcome.event) {
+          callbacks.onToolEvent?.(toolOutcome.event, toolOutcome.data);
+        }
       } catch (toolErr: any) {
         console.error("[Tool error]:", toolErr);
         toolOutcome = {
           result: JSON.stringify({ error: "No se pudo completar la acción: " + (toolErr?.message || "error") }),
         };
+      }
+
+      // If the model already spoke its farewell/transfer sentence before invoking end_call/transfer_to_human, skip redundant follow-up
+      if ((toolName === "end_call" || toolName === "transfer_to_human") && fullReply.trim().length > 0) {
+        currentToolCall = null;
+        break;
       }
 
       messages.push({
@@ -280,7 +326,7 @@ export async function streamGroqResponse(
             id: currentToolCall.id,
             type: "function",
             function: {
-              name: currentToolCall.name,
+              name: toolName,
               arguments: JSON.stringify(args),
             },
           },
@@ -298,7 +344,7 @@ export async function streamGroqResponse(
         apiKey,
         {
           messages,
-          tools: step === 0 ? groqTools : undefined,
+          tools: step === 0 && toolName !== "end_call" && toolName !== "transfer_to_human" ? groqTools : undefined,
           stream: false,
           temperature: 0.2,
           max_tokens: 200,
@@ -325,7 +371,13 @@ export async function streamGroqResponse(
       }
 
       if (!reply) {
-        reply = "Su solicitud ha sido procesada. ¿Le puedo ayudar en algo más?";
+        if (toolName === "end_call") {
+          reply = `Muchas gracias por comunicarse con ${business.name}. ¡Que tenga un excelente día, hasta luego!`;
+        } else if (toolName === "transfer_to_human") {
+          reply = "Con mucho gusto, en este momento estoy transfiriendo su llamada con un asesor. Un momento por favor.";
+        } else {
+          reply = "Su solicitud ha sido procesada. ¿Le puedo ayudar en algo más?";
+        }
       }
       callbacks.onSentenceClause(reply);
       fullReply += (fullReply ? " " : "") + reply;

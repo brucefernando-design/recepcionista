@@ -1,8 +1,14 @@
 import http from "http";
 import WebSocket, { WebSocketServer } from "ws";
 import { parse } from "url";
-import { CallStreamingSession, type StreamSessionConfig } from "./session";
+import {
+  CallStreamingSession,
+  pendingCallActions,
+  normalizePhoneToE164,
+  type StreamSessionConfig,
+} from "./session";
 import { query } from "../lib/postgres";
+import { getBusiness } from "../lib/db";
 import type { TwilioInboundMessage } from "./types";
 
 const PORT = parseInt(process.env.PORT || "8088", 10);
@@ -54,7 +60,9 @@ const server = http.createServer(async (req, res) => {
     req.on("end", () => {
       const params = new URLSearchParams(body);
       const host = req.headers.host || `localhost:${PORT}`;
-      const wsProtocol = req.headers["x-forwarded-proto"] === "https" ? "wss" : "ws";
+      const isHttps = req.headers["x-forwarded-proto"] === "https";
+      const wsProtocol = isHttps ? "wss" : "ws";
+      const httpProtocol = isHttps ? "https" : "http";
       const businessId = (queryParams.businessId as string) || (params.get("businessId") as string) || "biz_clinic";
       const from = params.get("From") || (queryParams.From as string) || "unknown";
 
@@ -66,8 +74,54 @@ const server = http.createServer(async (req, res) => {
       <Parameter name="callerPhone" value="${from}" />
     </Stream>
   </Connect>
+  <Redirect method="POST">${httpProtocol}://${host}/after-stream?businessId=${businessId}</Redirect>
 </Response>`;
 
+      res.writeHead(200, { "Content-Type": "text/xml" });
+      res.end(twiml);
+    });
+    return;
+  }
+
+  // Post-stream TwiML handler: executes transfer (<Dial>) or hangup (<Hangup>) when WS closes
+  if (pathname === "/after-stream") {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+
+    req.on("end", async () => {
+      const params = new URLSearchParams(body);
+      const callSid = params.get("CallSid") || (queryParams.CallSid as string) || "";
+      const businessId = (queryParams.businessId as string) || (params.get("businessId") as string) || "biz_clinic";
+
+      const action = callSid ? pendingCallActions.get(callSid) : undefined;
+      if (callSid) pendingCallActions.delete(callSid);
+
+      console.log("[/after-stream] CallSid:", callSid, "Action:", JSON.stringify(action));
+
+      if (action?.type === "transfer") {
+        let targetPhone = action.to || "";
+        if (!targetPhone) {
+          const biz = await getBusiness(businessId).catch(() => null);
+          targetPhone = normalizePhoneToE164(biz?.transferPhone || biz?.phone || "");
+        }
+        if (targetPhone) {
+          const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="25">${targetPhone}</Dial>
+  <Hangup />
+</Response>`;
+          res.writeHead(200, { "Content-Type": "text/xml" });
+          res.end(twiml);
+          return;
+        }
+      }
+
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Hangup />
+</Response>`;
       res.writeHead(200, { "Content-Type": "text/xml" });
       res.end(twiml);
     });
