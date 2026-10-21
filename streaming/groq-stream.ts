@@ -1,14 +1,132 @@
 import type { Business } from "../lib/types";
-import { buildSystemPrompt } from "../lib/agent/prompt";
 import { agentTools, executeTool } from "../lib/agent/tools";
 import type { ChatTurn } from "../lib/agent";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = process.env.GROQ_MODEL || "qwen/qwen3.8-27b";
+const GROQ_MODELS = [
+  process.env.GROQ_MODEL || "qwen/qwen3.8-27b",
+  "openai/gpt-oss-20b",
+  "openai/gpt-oss-120b",
+];
 
 function combineSignals(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);
   return signal ? (AbortSignal as any).any([signal, timeout]) : timeout;
+}
+
+const VOICE_TOOLS = new Set([
+  "check_availability",
+  "book_appointment",
+  "find_free_slots",
+  "request_callback",
+  "lookup_my_appointments",
+  "cancel_appointment",
+  "reschedule_appointment",
+]);
+
+function shorten(text: string | undefined, max: number): string {
+  if (!text) return "";
+  const firstSentence = text.split(/(?<=[.!?])\s/)[0];
+  return firstSentence.length > max ? firstSentence.slice(0, max - 1) + "…" : firstSentence;
+}
+
+function compactSchema(schema: any): any {
+  if (!schema || typeof schema !== "object") return schema;
+  if (Array.isArray(schema)) return schema.map(compactSchema);
+  const out: any = {};
+  for (const [k, v] of Object.entries(schema)) {
+    if (k === "description" && typeof v === "string") out[k] = shorten(v, 60);
+    else out[k] = compactSchema(v);
+  }
+  return out;
+}
+
+export function buildVoiceTools(business: Business) {
+  return agentTools
+    .filter((t) => VOICE_TOOLS.has(t.name) || (t.name === "take_order" && business.type === "restaurant"))
+    .map((t) => ({
+      type: "function",
+      function: {
+        name: t.name,
+        description: shorten(t.description, 120),
+        parameters: compactSchema(t.input_schema),
+      },
+    }));
+}
+
+export function buildVoiceSystemPrompt(business: Business): string {
+  const servicesList =
+    business.services.map((s) => `${s.name} (${s.durationMinutes} min${s.price ? `, $${s.price}` : ""})`).join(", ") ||
+    "Consulta general (30 min)";
+  const defaultService = business.services[0]?.name || "Consulta general";
+  const singleServiceRule =
+    business.services.length <= 1
+      ? `- Único servicio disponible: "${defaultService}". NUNCA preguntes qué servicio desea ni si es primera vez; usa siempre "${defaultService}" automáticamente.`
+      : `- Servicios: ${servicesList}.`;
+
+  const faqs = business.faqs.map((f) => `${f.question}: ${f.answer}`).join(" | ");
+
+  const dayNames = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+  const now = new Date();
+  const nextDays: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now.getTime() + i * 86400000);
+    const iso = d.toISOString().slice(0, 10);
+    const dayName = dayNames[d.getUTCDay()];
+    const label = i === 0 ? `Hoy ${dayName}` : i === 1 ? `Mañana ${dayName}` : `Próximo ${dayName}`;
+    nextDays.push(`${label} = ${iso}`);
+  }
+
+  return `Eres AIVA, recepcionista telefónica de ${business.name} (${business.type}).
+Horario: ${business.hours}. Dirección: ${business.address}. Teléfono: ${business.phone}.
+${singleServiceRule}
+${faqs ? `Preguntas frecuentes: ${faqs}` : ""}
+Calendario de referencia: ${nextDays.join(", ")}.
+
+REGLAS ESTRICTAS DE LLAMADA EN VIVO:
+1. Responde SIEMPRE en español natural, cálido y breve (máximo 1 o 2 oraciones cortas, sin listas ni símbolos).
+2. HORA HABLADA: Al hablar con el cliente usa SIEMPRE formato natural de 12 horas ("a la 1 de la tarde", "a las 4 de la tarde", "a las 10 de la mañana"). Si pide "a la 1", "a las 2", "a las 3", "a las 4", "a las 5", entiende SIEMPRE horario de la tarde (13:00 a 17:00). En las herramientas pasa formato 24h ("13:00", "16:00").
+3. FLUJO DE CITA DIRECTO: Para agendar solo necesitas 3 cosas: (a) fecha y hora, (b) nombre del cliente, (c) teléfono del cliente.
+4. Si aún NO tienes nombre o teléfono y el cliente propone fecha/hora, usa \`check_availability\`. Pero en cuanto YA tengas los 4 datos (fecha, hora, nombre y teléfono), NO llames a \`check_availability\`: ejecuta DIRECTAMENTE \`book_appointment\` (con \`service_name: "${defaultService}"\`), ya que \`book_appointment\` verifica la disponibilidad y guarda la cita en un solo paso. NUNCA hagas preguntas extra como "¿es tu primera visita?".
+5. Nunca digas que una cita quedó agendada sin haber llamado primero a \`book_appointment\`.`;
+}
+
+async function groqFetchWithFailover(
+  apiKey: string,
+  baseBody: Record<string, any>,
+  signal: AbortSignal | undefined
+): Promise<Response> {
+  const uniqueModels = Array.from(new Set(GROQ_MODELS));
+  let lastRes: Response | undefined;
+
+  for (const model of uniqueModels) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(GROQ_API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey.trim()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ...baseBody, model }),
+        signal: combineSignals(signal, 14000),
+      });
+
+      if (res.ok) return res;
+      lastRes = res;
+
+      const status = res.status;
+      const errText = await res.text().catch(() => "");
+      console.warn(`[Groq ${model}] status=${status} attempt=${attempt + 1}: ${errText.slice(0, 180)}`);
+
+      // On 429 rate-limit or 400 tool_use_failed or 5xx, immediately switch to next model!
+      if (status === 429 || status === 400 || status >= 500) {
+        break;
+      }
+      return new Response(errText, { status });
+    }
+  }
+
+  return lastRes!;
 }
 
 export interface GroqStreamCallbacks {
@@ -25,43 +143,30 @@ export async function streamGroqResponse(
   callbacks: GroqStreamCallbacks,
   signal?: AbortSignal
 ): Promise<void> {
-  const systemPrompt = buildSystemPrompt(business, { language: "es" });
-
-  const groqTools = agentTools.map((t) => ({
-    type: "function",
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.input_schema,
-    },
-  }));
+  const systemPrompt = buildVoiceSystemPrompt(business);
+  const groqTools = buildVoiceTools(business);
 
   const messages: any[] = [
     { role: "system", content: systemPrompt },
-    ...history.slice(-16).map((t) => ({ role: t.role, content: t.content })),
+    ...history.slice(-10).map((t) => ({ role: t.role, content: t.content })),
     { role: "user", content: userMessage },
   ];
 
   try {
-    const res = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey.trim()}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
+    const res = await groqFetchWithFailover(
+      apiKey,
+      {
         messages,
         tools: groqTools,
         stream: true,
         temperature: 0.2,
-        max_tokens: 250,
-      }),
-      signal: combineSignals(signal, 15000),
-    });
+        max_tokens: 220,
+      },
+      signal
+    );
 
     if (!res.ok) {
-      const err = await res.text();
+      const err = await res.text().catch(() => "");
       throw new Error(`Groq stream error: ${res.status} ${err}`);
     }
 
@@ -74,9 +179,8 @@ export async function streamGroqResponse(
     let buffer = "";
     let sentenceBuffer = "";
     let fullReply = "";
+    let inThinkBlock = false;
     let toolCallBuffer: { id: string; name: string; arguments: string } | null = null;
-
-    const sentencePunctuation = /[.?!,;:\n]+/;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -99,7 +203,7 @@ export async function streamGroqResponse(
             const tc = delta.tool_calls[0];
             if (!toolCallBuffer) {
               toolCallBuffer = {
-                id: tc.id || "",
+                id: tc.id || `call_${Date.now()}`,
                 name: tc.function?.name || "",
                 arguments: tc.function?.arguments || "",
               };
@@ -112,17 +216,26 @@ export async function streamGroqResponse(
           }
 
           if (delta?.content) {
-            const token = delta.content;
+            let token: string = delta.content;
+            if (token.includes("<think>")) inThinkBlock = true;
+            if (inThinkBlock) {
+              if (token.includes("</think>")) {
+                inThinkBlock = false;
+                token = token.split("</think>").pop() || "";
+              } else {
+                continue;
+              }
+            }
+            if (!token) continue;
+
             fullReply += token;
             sentenceBuffer += token;
 
-            // Check if sentenceBuffer has a completed phrase or punctuation mark
             const buf = sentenceBuffer.trim();
             const endsSentence = /[.?!\n]\s*$/.test(sentenceBuffer) && buf.length > 8;
             const endsClause = /[,;:]\s*$/.test(sentenceBuffer) && buf.length > 35;
             if (endsSentence || endsClause) {
-              const clause = buf;
-              callbacks.onSentenceClause(clause);
+              callbacks.onSentenceClause(buf);
               sentenceBuffer = "";
             }
           }
@@ -130,22 +243,26 @@ export async function streamGroqResponse(
       }
     }
 
-    // Flush any remaining text in sentence buffer
     if (sentenceBuffer.trim().length > 0) {
       callbacks.onSentenceClause(sentenceBuffer.trim());
     }
 
-    // Handle tool call if model requested one
-    if (toolCallBuffer && toolCallBuffer.name) {
-      let args = {};
+    // Handle tool call if model requested one (up to 2 chained tool calls: e.g. check_availability -> book_appointment)
+    let currentToolCall = toolCallBuffer;
+    for (let step = 0; step < 2 && currentToolCall && currentToolCall.name; step++) {
+      let args: Record<string, any> = {};
       try {
-        args = JSON.parse(toolCallBuffer.arguments || "{}");
+        args = JSON.parse(currentToolCall.arguments || "{}");
       } catch {}
+
+      if (currentToolCall.name === "book_appointment" && !args.service_name) {
+        args.service_name = business.services[0]?.name || "Consulta general";
+      }
 
       let toolOutcome: { result: string };
       try {
-        console.log("[Tool call]:", toolCallBuffer.name, JSON.stringify(args));
-        toolOutcome = await executeTool(business, toolCallBuffer.name, args, {
+        console.log("[Tool call]:", currentToolCall.name, JSON.stringify(args));
+        toolOutcome = await executeTool(business, currentToolCall.name, args, {
           language: "es",
         });
         console.log("[Tool result]:", String(toolOutcome.result).slice(0, 200));
@@ -160,47 +277,58 @@ export async function streamGroqResponse(
         role: "assistant",
         tool_calls: [
           {
-            id: toolCallBuffer.id,
+            id: currentToolCall.id,
             type: "function",
             function: {
-              name: toolCallBuffer.name,
-              arguments: toolCallBuffer.arguments,
+              name: currentToolCall.name,
+              arguments: JSON.stringify(args),
             },
           },
         ],
       });
       messages.push({
         role: "tool",
-        tool_call_id: toolCallBuffer.id,
+        tool_call_id: currentToolCall.id,
         content: toolOutcome.result,
       });
 
-      // Stream the final response after tool execution
-      const followUpRes = await fetch(GROQ_API_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey.trim()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
+      currentToolCall = null;
+
+      const followUpRes = await groqFetchWithFailover(
+        apiKey,
+        {
           messages,
+          tools: step === 0 ? groqTools : undefined,
           stream: false,
+          temperature: 0.2,
           max_tokens: 200,
-        }),
-        signal: combineSignals(signal, 15000),
-      });
+        },
+        signal
+      );
 
       let reply = "";
       if (followUpRes.ok) {
         const followData = await followUpRes.json();
-        reply = (followData.choices?.[0]?.message?.content || "").trim();
+        const msg = followData.choices?.[0]?.message;
+        if (msg?.tool_calls && msg.tool_calls.length > 0 && step === 0) {
+          const nextTc = msg.tool_calls[0];
+          currentToolCall = {
+            id: nextTc.id || `call_${Date.now()}`,
+            name: nextTc.function?.name || "",
+            arguments: nextTc.function?.arguments || "{}",
+          };
+          continue;
+        }
+        reply = (msg?.content || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
       } else {
-        console.error("[Groq follow-up error]:", followUpRes.status, await followUpRes.text());
+        console.error("[Groq follow-up error]:", followUpRes.status);
       }
-      if (!reply) reply = "Disculpe, tuve un inconveniente al procesar su solicitud. ¿Me lo puede repetir, por favor?";
+
+      if (!reply) {
+        reply = "Su solicitud ha sido procesada. ¿Le puedo ayudar en algo más?";
+      }
       callbacks.onSentenceClause(reply);
-      fullReply += " " + reply;
+      fullReply += (fullReply ? " " : "") + reply;
     }
 
     callbacks.onComplete(fullReply.trim());
