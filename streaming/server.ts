@@ -7,7 +7,10 @@ import type { TwilioInboundMessage } from "./types";
 
 const PORT = parseInt(process.env.PORT || "8080", 10);
 
+let globalKeys: StreamSessionConfig | null = null;
+
 async function getApiKeys(): Promise<StreamSessionConfig> {
+  if (globalKeys) return globalKeys;
   let deepgramKey = process.env.DEEPGRAM_API_KEY || "";
   let cartesiaKey = process.env.CARTESIA_API_KEY || "";
   let cartesiaVoiceId = process.env.CARTESIA_VOICE_ID || "";
@@ -28,7 +31,8 @@ async function getApiKeys(): Promise<StreamSessionConfig> {
     console.error("[Settings DB fetch error]:", err);
   }
 
-  return { deepgramKey, cartesiaKey, cartesiaVoiceId, groqKey };
+  globalKeys = { deepgramKey, cartesiaKey, cartesiaVoiceId, groqKey };
+  return globalKeys;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -87,20 +91,22 @@ server.on("upgrade", (req, socket, head) => {
   }
 });
 
-wss.on("connection", async (ws: WebSocket) => {
+wss.on("connection", (ws: WebSocket) => {
   console.log("[Twilio Media Stream] New connection opened");
-  const keys = await getApiKeys();
   let session: CallStreamingSession | null = null;
+  const messageQueue: WebSocket.RawData[] = [];
 
-  ws.on("message", async (data: WebSocket.RawData) => {
+  const handleMessage = async (data: WebSocket.RawData) => {
     try {
       const msg: TwilioInboundMessage = JSON.parse(data.toString());
+      console.log("[Twilio WS event]:", msg.event);
 
       if (msg.event === "start") {
         console.log("[Twilio] Stream started:", msg.start.streamSid);
         const businessId = msg.start.customParameters?.businessId || "biz_clinic";
         const callerPhone = msg.start.customParameters?.callerPhone || "";
 
+        const keys = globalKeys || (await getApiKeys());
         session = new CallStreamingSession(ws, keys);
         await session.initialize(
           msg.start.streamSid,
@@ -122,7 +128,25 @@ wss.on("connection", async (ws: WebSocket) => {
     } catch (err) {
       console.error("[Twilio stream message error]:", err);
     }
+  };
+
+  ws.on("message", (data: WebSocket.RawData) => {
+    if (!globalKeys) {
+      messageQueue.push(data);
+    } else {
+      void handleMessage(data);
+    }
   });
+
+  if (!globalKeys) {
+    getApiKeys().then((keys) => {
+      globalKeys = keys;
+      while (messageQueue.length > 0) {
+        const item = messageQueue.shift();
+        if (item) void handleMessage(item);
+      }
+    });
+  }
 
   ws.on("close", async () => {
     console.log("[Twilio Media Stream] Connection closed");
@@ -133,6 +157,9 @@ wss.on("connection", async (ws: WebSocket) => {
   });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`🚀 AIVA Real-Time Voice Streaming Engine listening on port ${PORT}`);
+  // Prefetch API keys at startup
+  await getApiKeys();
+  console.log("✅ API keys prefetched from database");
 });
