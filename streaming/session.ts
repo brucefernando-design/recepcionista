@@ -29,7 +29,10 @@ export class CallStreamingSession {
   private history: ChatTurn[] = [];
   private currentContextId = "";
   private isAiSpeaking = false;
+  private aiSpeechStartTime = 0;
   private abortController: AbortController | null = null;
+  private speechBuffer = "";
+  private speechDebounceTimer: NodeJS.Timeout | null = null;
 
   constructor(
     twilioWs: WebSocket,
@@ -58,9 +61,7 @@ export class CallStreamingSession {
       "es",
       {
         onTranscript: (text, isFinal, speechFinal) => {
-          if (speechFinal && text.trim().length > 1) {
-            this.handleUserSpeech(text.trim());
-          }
+          this.handleIncomingTranscript(text, isFinal, speechFinal);
         },
         onSpeechStarted: () => {
           this.handleBargeIn();
@@ -102,8 +103,45 @@ export class CallStreamingSession {
     }
   }
 
+  private handleIncomingTranscript(text: string, isFinal: boolean, speechFinal: boolean): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    if (speechFinal) {
+      if (this.speechDebounceTimer) {
+        clearTimeout(this.speechDebounceTimer);
+        this.speechDebounceTimer = null;
+      }
+      const fullText = (this.speechBuffer ? `${this.speechBuffer} ${trimmed}` : trimmed).trim();
+      this.speechBuffer = "";
+      if (fullText.length > 1) {
+        this.handleUserSpeech(fullText);
+      }
+      return;
+    }
+
+    if (isFinal) {
+      this.speechBuffer = (this.speechBuffer ? `${this.speechBuffer} ${trimmed}` : trimmed).trim();
+
+      // Debounce: if user finished a phrase and pauses for 650ms, fire response!
+      if (this.speechDebounceTimer) clearTimeout(this.speechDebounceTimer);
+      this.speechDebounceTimer = setTimeout(() => {
+        const fullText = this.speechBuffer.trim();
+        this.speechBuffer = "";
+        if (fullText.length > 1) {
+          this.handleUserSpeech(fullText);
+        }
+      }, 650);
+    }
+  }
+
   private handleBargeIn(): void {
     if (this.isAiSpeaking) {
+      // Ignore false triggers in the first 350ms of AI speech to avoid echo cancellation jitter
+      if (Date.now() - this.aiSpeechStartTime < 350) {
+        return;
+      }
+
       console.log("[Barge-in] User interrupted AI. Cutting audio immediately.");
       this.isAiSpeaking = false;
 
@@ -140,6 +178,7 @@ export class CallStreamingSession {
 
     this.currentContextId = `ctx_${Date.now()}`;
     this.isAiSpeaking = true;
+    this.aiSpeechStartTime = Date.now();
     this.abortController = new AbortController();
 
     let fullReply = "";
@@ -175,6 +214,7 @@ export class CallStreamingSession {
   public speakToCaller(text: string): void {
     this.currentContextId = `ctx_${Date.now()}`;
     this.isAiSpeaking = true;
+    this.aiSpeechStartTime = Date.now();
     console.log("[speakToCaller -> Cartesia]:", text);
     if (this.cartesia) {
       this.cartesia.sendText(text, this.currentContextId, false);
@@ -198,6 +238,7 @@ export class CallStreamingSession {
 
   public async cleanup(): Promise<void> {
     console.log("[Call ended] Saving transcript to database...");
+    if (this.speechDebounceTimer) clearTimeout(this.speechDebounceTimer);
     if (this.deepgram) this.deepgram.close();
     if (this.cartesia) this.cartesia.close();
 

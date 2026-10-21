@@ -1,6 +1,5 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { cookies } from "next/headers";
 
 const JWT_SECRET = process.env.JWT_SECRET || "recepcionista-secret-key-2026-super-secure";
 const COOKIE_NAME = "aiva_session";
@@ -47,6 +46,7 @@ export function verifyToken(token: string): SessionUser | null {
 
 export async function getSession(): Promise<SessionUser | null> {
   try {
+    const { cookies } = await import("next/headers");
     const cookieStore = cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value;
     if (!token) return null;
