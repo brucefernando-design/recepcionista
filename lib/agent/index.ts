@@ -36,7 +36,7 @@ export async function runAgentTurn(
   userMessage: string,
   opts: AgentTurnOptions = {}
 ): Promise<AgentTurnResult> {
-  if (isGroqConfigured()) {
+  if (await isGroqConfigured()) {
     try {
       return await runGroqTurn(business, history, userMessage, opts);
     } catch (err) {

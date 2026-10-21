@@ -2,11 +2,43 @@ import type { Business } from "../types";
 import { buildSystemPrompt, type PromptContext } from "./prompt";
 import { agentTools, executeTool } from "./tools";
 import type { AgentTurnResult, ChatTurn, AgentTurnOptions } from "./index";
+import { query } from "../postgres";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = process.env.GROQ_MODEL || "qwen/qwen3.8-27b";
 const MAX_TOOL_ITERATIONS = 5;
 const MAX_HISTORY_TURNS = 24;
+
+let cachedGroqKey: string | null = null;
+
+export async function getGroqApiKey(): Promise<string> {
+  if (
+    process.env.GROQ_API_KEY &&
+    process.env.GROQ_API_KEY.trim().startsWith("gsk_")
+  ) {
+    return process.env.GROQ_API_KEY.trim();
+  }
+  if (cachedGroqKey) {
+    return cachedGroqKey;
+  }
+  try {
+    const res = await query(
+      "SELECT value FROM system_settings WHERE key = 'groq_api_key' LIMIT 1"
+    );
+    if (res.rows[0]?.value) {
+      cachedGroqKey = String(res.rows[0].value).trim();
+      return cachedGroqKey;
+    }
+  } catch (err) {
+    console.error("[Groq] failed to read key from DB:", err);
+  }
+  return "";
+}
+
+export async function isGroqConfigured(): Promise<boolean> {
+  const key = await getGroqApiKey();
+  return Boolean(key && key.startsWith("gsk_"));
+}
 
 interface GroqTool {
   type: "function";
@@ -31,19 +63,17 @@ interface GroqMessage {
   tool_call_id?: string;
 }
 
-export function isGroqConfigured(): boolean {
-  return Boolean(
-    process.env.GROQ_API_KEY &&
-      process.env.GROQ_API_KEY.trim().startsWith("gsk_")
-  );
-}
-
 export async function runGroqTurn(
   business: Business,
   history: ChatTurn[],
   userMessage: string,
   opts: AgentTurnOptions = {}
 ): Promise<AgentTurnResult> {
+  const apiKey = await getGroqApiKey();
+  if (!apiKey) {
+    throw new Error("No Groq API key configured");
+  }
+
   const events: AgentTurnResult["events"] = [];
   let language: string | undefined;
 
@@ -78,7 +108,7 @@ export async function runGroqTurn(
     const res = await fetch(GROQ_API_URL, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
