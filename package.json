@@ -39,7 +39,7 @@
     "@anthropic-ai/sdk": "^0.111.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^20",
+    "@types/node": "^26",
     "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.2",
     "bcryptjs": "^3.0.3",
