@@ -13,6 +13,8 @@ export interface StreamSessionConfig {
   groqKey: string;
 }
 
+const FALLBACK_REPLY = "Disculpe, no alcancé a escucharle bien. ¿Me lo podría repetir, por favor?";
+
 export class CallStreamingSession {
   private twilioWs: WebSocket;
   private streamSid = "";
@@ -28,16 +30,23 @@ export class CallStreamingSession {
   private transcript: CallLog["transcript"] = [];
   private history: ChatTurn[] = [];
   private currentContextId = "";
-  private isAiSpeaking = false;
-  private aiSpeechStartTime = 0;
+
+  // Playback tracking: Twilio buffers audio ahead of real time, so we estimate
+  // when the caller will actually finish hearing what we already sent.
+  private playbackEndsAt = 0;
+  private turnAudioStartedAt = 0;
+
+  // In-flight LLM generation state
   private abortController: AbortController | null = null;
+  private generating = false;
+  private inFlightUserText = "";
+  private partialReply = "";
+  private turnSeq = 0;
+
   private speechBuffer = "";
   private speechDebounceTimer: NodeJS.Timeout | null = null;
 
-  constructor(
-    twilioWs: WebSocket,
-    config: StreamSessionConfig
-  ) {
+  constructor(twilioWs: WebSocket, config: StreamSessionConfig) {
     this.twilioWs = twilioWs;
     this.config = config;
   }
@@ -56,34 +65,28 @@ export class CallStreamingSession {
     this.business = await getBusiness(this.businessId);
 
     // Initialize Deepgram for real-time STT
-    this.deepgram = new DeepgramLiveClient(
-      this.config.deepgramKey,
-      "es",
-      {
-        onTranscript: (text, isFinal, speechFinal) => {
-          this.handleIncomingTranscript(text, isFinal, speechFinal);
-        },
-        onSpeechStarted: () => {
-          this.handleBargeIn();
-        },
-        onError: (err) => console.error("[Session Deepgram error]:", err),
-        onClose: () => console.log("[Session Deepgram closed]"),
-      }
-    );
+    this.deepgram = new DeepgramLiveClient(this.config.deepgramKey, "es", {
+      onTranscript: (text, isFinal, speechFinal) => {
+        this.handleIncomingTranscript(text, isFinal, speechFinal);
+      },
+      onSpeechStarted: () => {
+        this.handleBargeIn();
+      },
+      onError: (err) => console.error("[Session Deepgram error]:", err),
+      onClose: () => console.log("[Session Deepgram closed]"),
+    });
     this.deepgram.connect();
 
     // Initialize Cartesia for real-time TTS
     this.cartesia = new CartesiaLiveClient(
       this.config.cartesiaKey,
-      this.config.cartesiaVoiceId || "80ae4708-744d-459d-bd80-58964af17905", // Maritza - Reception Lead
+      this.config.cartesiaVoiceId || "80ae4708-744d-459d-bd80-58964af17905",
       {
         onAudioChunk: (base64Mulaw) => {
           this.sendAudioToTwilio(base64Mulaw);
         },
         onError: (err) => console.error("[Session Cartesia error]:", err),
-        onDone: () => {
-          this.isAiSpeaking = false;
-        },
+        onDone: () => {},
       }
     );
     this.cartesia.connect();
@@ -103,6 +106,10 @@ export class CallStreamingSession {
     }
   }
 
+  private isAudioPlaying(): boolean {
+    return Date.now() < this.playbackEndsAt - 150;
+  }
+
   private handleIncomingTranscript(text: string, isFinal: boolean, speechFinal: boolean): void {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -115,7 +122,7 @@ export class CallStreamingSession {
       const fullText = (this.speechBuffer ? `${this.speechBuffer} ${trimmed}` : trimmed).trim();
       this.speechBuffer = "";
       if (fullText.length > 1) {
-        this.handleUserSpeech(fullText);
+        void this.handleUserSpeech(fullText);
       }
       return;
     }
@@ -123,66 +130,82 @@ export class CallStreamingSession {
     if (isFinal) {
       this.speechBuffer = (this.speechBuffer ? `${this.speechBuffer} ${trimmed}` : trimmed).trim();
 
-      // Debounce: if user finished a phrase and pauses for 650ms, fire response!
+      // Debounce: if the caller finished a phrase and pauses, answer.
       if (this.speechDebounceTimer) clearTimeout(this.speechDebounceTimer);
       this.speechDebounceTimer = setTimeout(() => {
+        this.speechDebounceTimer = null;
         const fullText = this.speechBuffer.trim();
         this.speechBuffer = "";
         if (fullText.length > 1) {
-          this.handleUserSpeech(fullText);
+          void this.handleUserSpeech(fullText);
         }
-      }, 650);
+      }, 700);
     }
   }
 
   private handleBargeIn(): void {
-    if (this.isAiSpeaking) {
-      // Ignore false triggers in the first 350ms of AI speech to avoid echo cancellation jitter
-      if (Date.now() - this.aiSpeechStartTime < 350) {
-        return;
-      }
+    // Only interrupt when the caller is really hearing us. Never kill a reply
+    // that is still being generated (that caused silent, unanswered turns).
+    if (!this.isAudioPlaying()) return;
+    if (Date.now() - this.turnAudioStartedAt < 400) return;
 
-      console.log("[Barge-in] User interrupted AI. Cutting audio immediately.");
-      this.isAiSpeaking = false;
+    console.log("[Barge-in] User interrupted AI. Cutting audio immediately.");
+    this.playbackEndsAt = 0;
 
-      // 1. Tell Twilio to clear its audio playback buffer immediately
-      if (this.twilioWs.readyState === WebSocket.OPEN && this.streamSid) {
-        this.twilioWs.send(
-          JSON.stringify({
-            event: "clear",
-            streamSid: this.streamSid,
-          })
-        );
+    if (this.twilioWs.readyState === WebSocket.OPEN && this.streamSid) {
+      this.twilioWs.send(JSON.stringify({ event: "clear", streamSid: this.streamSid }));
+    }
+    if (this.cartesia && this.currentContextId) {
+      this.cartesia.cancelContext(this.currentContextId);
+    }
+    if (this.abortController) {
+      // Keep conversational context of what was said before the interruption.
+      if (this.generating && this.inFlightUserText) {
+        this.history.push({ role: "user", content: this.inFlightUserText });
+        if (this.partialReply.trim()) {
+          this.history.push({ role: "assistant", content: this.partialReply.trim() });
+        }
       }
-
-      // 2. Abort Cartesia context
-      if (this.cartesia && this.currentContextId) {
-        this.cartesia.cancelContext(this.currentContextId);
-      }
-
-      // 3. Abort Groq token generation
-      if (this.abortController) {
-        this.abortController.abort();
-        this.abortController = null;
-      }
+      this.abortController.abort();
+      this.abortController = null;
+      this.generating = false;
+      this.inFlightUserText = "";
     }
   }
 
-  private async handleUserSpeech(userText: string): Promise<void> {
+  private async handleUserSpeech(userTextRaw: string): Promise<void> {
+    let userText = userTextRaw;
+
+    // If a reply is still being generated and no audio has been heard yet,
+    // the caller simply kept talking: merge both utterances into one turn.
+    if (this.generating && this.abortController && !this.isAudioPlaying()) {
+      console.log("[Turn merge] caller kept talking before reply was heard");
+      userText = `${this.inFlightUserText} ${userTextRaw}`.trim();
+      this.abortController.abort();
+      this.abortController = null;
+      this.generating = false;
+      if (this.cartesia && this.currentContextId) this.cartesia.cancelContext(this.currentContextId);
+    }
+
     console.log("[Caller speech]:", userText);
-    const now = new Date().toISOString();
-    this.transcript.push({ role: "caller", text: userText, timestamp: now });
-    this.history.push({ role: "user", content: userText });
+    this.transcript.push({ role: "caller", text: userText, timestamp: new Date().toISOString() });
 
     if (!this.business) return;
 
+    const seq = ++this.turnSeq;
     this.currentContextId = `ctx_${Date.now()}`;
-    this.isAiSpeaking = true;
-    this.aiSpeechStartTime = Date.now();
+    const contextId = this.currentContextId;
     this.abortController = new AbortController();
+    const signal = this.abortController.signal;
+    this.generating = true;
+    this.inFlightUserText = userText;
+    this.partialReply = "";
+    this.turnAudioStartedAt = 0;
 
-    let fullReply = "";
+    let spoke = false;
+    let errored = false;
 
+    // NOTE: the current user message is passed separately; history only holds past turns.
     await streamGroqResponse(
       this.config.groqKey,
       this.business,
@@ -190,55 +213,75 @@ export class CallStreamingSession {
       userText,
       {
         onSentenceClause: (clause) => {
+          if (seq !== this.turnSeq || signal.aborted) return;
           console.log("[Groq clause -> Cartesia]:", clause);
-          if (this.cartesia) {
-            this.cartesia.sendText(clause, this.currentContextId, true);
-          }
+          spoke = true;
+          this.partialReply += (this.partialReply ? " " : "") + clause;
+          this.cartesia?.sendText(clause, contextId, true);
         },
         onComplete: (reply) => {
-          fullReply = reply;
-          const finishedNow = new Date().toISOString();
-          this.transcript.push({
-            role: "aiva",
-            text: fullReply,
-            timestamp: finishedNow,
-          });
-          this.history.push({ role: "assistant", content: fullReply });
+          if (seq !== this.turnSeq || signal.aborted) return;
+          this.transcript.push({ role: "aiva", text: reply, timestamp: new Date().toISOString() });
+          this.history.push({ role: "user", content: userText });
+          this.history.push({ role: "assistant", content: reply });
         },
-        onError: (err) => console.error("[Groq stream error]:", err),
+        onError: (err) => {
+          errored = true;
+          console.error("[Groq stream error]:", err);
+        },
       },
-      this.abortController.signal
+      signal
     );
+
+    if (seq !== this.turnSeq || signal.aborted) return;
+
+    this.generating = false;
+    this.inFlightUserText = "";
+
+    if (errored && !spoke) {
+      // Never leave the caller in silence.
+      this.transcript.push({ role: "aiva", text: FALLBACK_REPLY, timestamp: new Date().toISOString() });
+      this.cartesia?.sendText(FALLBACK_REPLY, contextId, false);
+      return;
+    }
+
+    // Close the Cartesia context so it flushes remaining audio.
+    this.cartesia?.sendText("", contextId, false);
   }
 
   public speakToCaller(text: string): void {
     this.currentContextId = `ctx_${Date.now()}`;
-    this.isAiSpeaking = true;
-    this.aiSpeechStartTime = Date.now();
     console.log("[speakToCaller -> Cartesia]:", text);
-    if (this.cartesia) {
-      this.cartesia.sendText(text, this.currentContextId, false);
-    }
+    this.cartesia?.sendText(text, this.currentContextId, false);
   }
 
   private sendAudioToTwilio(base64Mulaw: string): void {
     if (this.twilioWs.readyState !== WebSocket.OPEN || !this.streamSid) {
       return;
     }
-    console.log(`[Audio -> Twilio]: sending ${base64Mulaw.length} bytes mulaw to ${this.streamSid}`);
-    const msg = {
-      event: "media",
-      streamSid: this.streamSid,
-      media: {
-        payload: base64Mulaw,
-      },
-    };
-    this.twilioWs.send(JSON.stringify(msg));
+    const now = Date.now();
+    // mulaw 8kHz: 8 bytes per ms
+    const bytes = Math.floor((base64Mulaw.length * 3) / 4);
+    const durationMs = bytes / 8;
+    if (now >= this.playbackEndsAt) {
+      this.turnAudioStartedAt = now;
+      this.playbackEndsAt = now + durationMs;
+    } else {
+      this.playbackEndsAt += durationMs;
+    }
+    this.twilioWs.send(
+      JSON.stringify({
+        event: "media",
+        streamSid: this.streamSid,
+        media: { payload: base64Mulaw },
+      })
+    );
   }
 
   public async cleanup(): Promise<void> {
     console.log("[Call ended] Saving transcript to database...");
     if (this.speechDebounceTimer) clearTimeout(this.speechDebounceTimer);
+    if (this.abortController) this.abortController.abort();
     if (this.deepgram) this.deepgram.close();
     if (this.cartesia) this.cartesia.close();
 

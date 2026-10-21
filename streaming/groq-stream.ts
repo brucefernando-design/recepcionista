@@ -6,6 +6,11 @@ import type { ChatTurn } from "../lib/agent";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = process.env.GROQ_MODEL || "qwen/qwen3.8-27b";
 
+function combineSignals(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? (AbortSignal as any).any([signal, timeout]) : timeout;
+}
+
 export interface GroqStreamCallbacks {
   onSentenceClause: (clause: string) => void;
   onComplete: (fullReply: string) => void;
@@ -52,7 +57,7 @@ export async function streamGroqResponse(
         temperature: 0.2,
         max_tokens: 250,
       }),
-      signal,
+      signal: combineSignals(signal, 15000),
     });
 
     if (!res.ok) {
@@ -112,8 +117,11 @@ export async function streamGroqResponse(
             sentenceBuffer += token;
 
             // Check if sentenceBuffer has a completed phrase or punctuation mark
-            if (sentencePunctuation.test(sentenceBuffer) && sentenceBuffer.trim().length > 10) {
-              const clause = sentenceBuffer.trim();
+            const buf = sentenceBuffer.trim();
+            const endsSentence = /[.?!\n]\s*$/.test(sentenceBuffer) && buf.length > 8;
+            const endsClause = /[,;:]\s*$/.test(sentenceBuffer) && buf.length > 35;
+            if (endsSentence || endsClause) {
+              const clause = buf;
               callbacks.onSentenceClause(clause);
               sentenceBuffer = "";
             }
@@ -134,9 +142,19 @@ export async function streamGroqResponse(
         args = JSON.parse(toolCallBuffer.arguments || "{}");
       } catch {}
 
-      const toolOutcome = await executeTool(business, toolCallBuffer.name, args, {
-        language: "es",
-      });
+      let toolOutcome: { result: string };
+      try {
+        console.log("[Tool call]:", toolCallBuffer.name, JSON.stringify(args));
+        toolOutcome = await executeTool(business, toolCallBuffer.name, args, {
+          language: "es",
+        });
+        console.log("[Tool result]:", String(toolOutcome.result).slice(0, 200));
+      } catch (toolErr: any) {
+        console.error("[Tool error]:", toolErr);
+        toolOutcome = {
+          result: JSON.stringify({ error: "No se pudo completar la acción: " + (toolErr?.message || "error") }),
+        };
+      }
 
       messages.push({
         role: "assistant",
@@ -170,14 +188,19 @@ export async function streamGroqResponse(
           stream: false,
           max_tokens: 200,
         }),
+        signal: combineSignals(signal, 15000),
       });
 
+      let reply = "";
       if (followUpRes.ok) {
         const followData = await followUpRes.json();
-        const reply = followData.choices?.[0]?.message?.content || "";
-        callbacks.onSentenceClause(reply);
-        fullReply += " " + reply;
+        reply = (followData.choices?.[0]?.message?.content || "").trim();
+      } else {
+        console.error("[Groq follow-up error]:", followUpRes.status, await followUpRes.text());
       }
+      if (!reply) reply = "Disculpe, tuve un inconveniente al procesar su solicitud. ¿Me lo puede repetir, por favor?";
+      callbacks.onSentenceClause(reply);
+      fullReply += " " + reply;
     }
 
     callbacks.onComplete(fullReply.trim());
