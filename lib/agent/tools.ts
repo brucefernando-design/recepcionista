@@ -5,12 +5,14 @@ import {
   addOrder,
   addWaitlistEntry,
   findAppointmentsByPhone,
+  getConflictingAppointments,
   isSlotTaken,
   newId,
   nextWaitingFor,
   rescheduleAppointment,
   setAppointmentStatus,
   setWaitlistStatus,
+  updateAppointmentPhone,
 } from "../db";
 import { findFreeSlots, isClosedOn, parseBookableWindow } from "../slots";
 import { occurrenceDates } from "../recurrence";
@@ -253,22 +255,42 @@ export async function executeTool(
           h += 12;
           time = `${String(h).padStart(2, "0")}:${m}`;
         }
-        const taken = await isSlotTaken(
+        const conflicts = await getConflictingAppointments(
           business.id,
           String(input.date),
           time
         );
         const spoken = formatSpokenTimeEs(time);
+        if (conflicts.length > 0) {
+          const recent = conflicts.find(
+            (c) => Date.now() - Date.parse(c.createdAt) < 180_000
+          );
+          if (recent) {
+            return {
+              result: `Note: The slot on ${input.date} at ${time} (${spoken}) was JUST booked and confirmed in this session for ${recent.customerName} (phone: ${recent.customerPhone}, ref: ${recent.id}). If the caller is ${recent.customerName} verifying their booking, reassure them that YES, their appointment is already confirmed for ${spoken}. Only offer another time if they want a second separate appointment.`,
+            };
+          }
+          return {
+            result: `The slot on ${input.date} at ${time} (${spoken}) is already taken. Suggest a nearby time.`,
+          };
+        }
         return {
-          result: taken
-            ? `The slot on ${input.date} at ${time} (${spoken}) is already taken. Suggest a nearby time.`
-            : `The slot on ${input.date} at ${time} (${spoken}) is available. Speak it naturally to the caller: "${spoken}".`,
+          result: `The slot on ${input.date} at ${time} (${spoken}) is available. Speak it naturally to the caller: "${spoken}".`,
         };
       }
 
       case "book_appointment": {
         const date = String(input.date);
         let time = String(input.time);
+        const rawPhone = String(input.customer_phone || "").trim();
+        const digitsOnly = rawPhone.replace(/\D/g, "");
+        if (digitsOnly.length < 7) {
+          return {
+            result: `Missing or incomplete customer phone number ("${rawPhone}"). Ask the caller for their complete phone number first, then call book_appointment.`,
+            isError: true,
+          };
+        }
+        const cleanPhone = digitsOnly;
 
         // Server-side guardrails: never trust the model to have validated.
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{1,2}:\d{2}$/.test(time)) {
@@ -319,7 +341,24 @@ export async function executeTool(
         // Re-check availability at booking time, duration-aware — the slot
         // may have been taken since check_availability ran (or the model
         // skipped checking), and long services block neighboring slots.
-        if (await isSlotTaken(business.id, date, time, duration)) {
+        const conflicts = await getConflictingAppointments(business.id, date, time, duration);
+        if (conflicts.length > 0) {
+          const callerNameNorm = String(input.customer_name || "").toLowerCase().trim();
+          const sameCustomer = conflicts.find(
+            (c) =>
+              c.customerName.toLowerCase().trim() === callerNameNorm ||
+              c.customerPhone.replace(/\D/g, "") === cleanPhone
+          );
+          if (sameCustomer) {
+            if (sameCustomer.customerPhone.replace(/\D/g, "").length < 7 && cleanPhone.length >= 7) {
+              await updateAppointmentPhone(sameCustomer.id, cleanPhone);
+            }
+            const spokenTime = formatSpokenTimeEs(sameCustomer.time);
+            return {
+              result: `Appointment is ALREADY confirmed for ${sameCustomer.customerName} on ${sameCustomer.date} at ${sameCustomer.time} (${spokenTime}). Reference: ${sameCustomer.id}. Reassure the caller: "Sí, su cita ya quedó confirmada para ${spokenTime}".`,
+              event: "appointment_booked",
+            };
+          }
           return {
             result: `The ${date} ${time} slot conflicts with an existing booking (this service runs ${duration} min). Apologize and offer another time (use find_free_slots).`,
             isError: true,
@@ -329,7 +368,7 @@ export async function executeTool(
           id: newId("appt"),
           businessId: business.id,
           customerName: String(input.customer_name),
-          customerPhone: String(input.customer_phone),
+          customerPhone: cleanPhone,
           serviceId: service?.id ?? "custom",
           serviceName: service?.name ?? serviceName,
           date: String(input.date),

@@ -104,7 +104,9 @@ const server = http.createServer(async (req, res) => {
         let targetPhone = action.to || "";
         if (!targetPhone) {
           const biz = await getBusiness(businessId).catch(() => null);
-          targetPhone = normalizePhoneToE164(biz?.transferPhone || biz?.phone || "");
+          targetPhone = normalizePhoneToE164(
+            biz?.staffPhone || (biz as any)?.transferPhone || biz?.phone || ""
+          );
         }
         if (targetPhone) {
           const twiml = `<?xml version="1.0" encoding="UTF-8"?>

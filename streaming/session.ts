@@ -69,6 +69,7 @@ export class CallStreamingSession {
   // In-flight LLM generation state
   private abortController: AbortController | null = null;
   private generating = false;
+  private turnGenerationStartedAt = 0;
   private inFlightUserText = "";
   private partialReply = "";
   private turnSeq = 0;
@@ -226,9 +227,20 @@ export class CallStreamingSession {
     if (this.closingCall) return;
     let userText = userTextRaw;
 
-    // If a reply is still being generated and no audio has been heard yet,
-    // the caller simply kept talking: merge both utterances into one turn.
+    // If a reply is still being generated and no audio has been heard yet:
+    // - If the caller just says a short check-in ("¿Bueno?", "¿Estás ahí?", "¿Lo tienes?") after >900ms,
+    //   let the in-flight response/tool finish instead of aborting and restarting it from zero!
     if (this.generating && this.abortController && !this.isAudioPlaying()) {
+      const elapsed = Date.now() - this.turnGenerationStartedAt;
+      const isShortCheckIn =
+        elapsed > 900 &&
+        /^[¿?¡!\s]*(bueno|alo|aló|lo tienes|me escuchas|est[aá]s ah[ií]|sigues ah[ií]|hola|oye)[¿?¡!.\s]*$/i.test(
+          userTextRaw.trim()
+        );
+      if (isShortCheckIn) {
+        console.log("[Turn keep-alive] Ignoring short check-in while tool/LLM finishes:", userTextRaw);
+        return;
+      }
       console.log("[Turn merge] caller kept talking before reply was heard");
       userText = `${this.inFlightUserText} ${userTextRaw}`.trim();
       this.abortController.abort();
@@ -248,6 +260,7 @@ export class CallStreamingSession {
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
     this.generating = true;
+    this.turnGenerationStartedAt = Date.now();
     this.inFlightUserText = userText;
     this.partialReply = "";
     this.turnAudioStartedAt = 0;
@@ -255,6 +268,7 @@ export class CallStreamingSession {
     let spoke = false;
     let errored = false;
     let shouldCloseAfterPlayback = false;
+    let bookedInTurn = false;
 
     // NOTE: the current user message is passed separately; history only holds past turns.
     await streamGroqResponse(
@@ -272,16 +286,20 @@ export class CallStreamingSession {
         },
         onToolEvent: (event) => {
           console.log("[Session tool event]:", event);
-          if (
-            event === "appointment_booked" ||
-            event === "callback_scheduled" ||
-            event === "order_taken"
-          ) {
-            this.callOutcome = event;
-          } else if (event === "transferred") {
+          if (event === "appointment_booked") {
+            this.callOutcome = "appointment_booked";
+            bookedInTurn = true;
+          } else if (event === "callback_scheduled" || event === "callback_logged") {
+            this.callOutcome = "callback_scheduled";
+          } else if (event === "order_taken") {
+            this.callOutcome = "order_taken";
+          } else if (event === "transferred" || event === "transfer_requested") {
             this.callOutcome = "transferred";
             const target = normalizePhoneToE164(
-              this.business?.transferPhone || this.business?.phone || ""
+              this.business?.staffPhone ||
+                (this.business as any)?.transferPhone ||
+                this.business?.phone ||
+                ""
             );
             if (this.callSid && target) {
               pendingCallActions.set(this.callSid, { type: "transfer", to: target });
@@ -301,7 +319,10 @@ export class CallStreamingSession {
           if (reply) {
             this.transcript.push({ role: "aiva", text: reply, timestamp: new Date().toISOString() });
             this.history.push({ role: "user", content: userText });
-            this.history.push({ role: "assistant", content: reply });
+            const historyReply = bookedInTurn
+              ? `${reply} [SISTEMA: La cita YA quedó registrada y confirmada exitosamente en la base de datos en este turno. Si el cliente pregunta "¿lo tienes?" o "¿ya quedó?", confírmale que SÍ está agendada y NO vuelvas a llamar check_availability ni book_appointment.]`
+              : reply;
+            this.history.push({ role: "assistant", content: historyReply });
           }
         },
         onError: (err) => {

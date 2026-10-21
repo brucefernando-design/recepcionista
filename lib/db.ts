@@ -430,19 +430,39 @@ export async function addAppointment(appt: Appointment): Promise<Appointment> {
   return appt;
 }
 
+export async function getConflictingAppointments(
+  businessId: string,
+  date: string,
+  time: string,
+  durationMinutes = 30
+): Promise<Appointment[]> {
+  const appts = await getAppointments(businessId);
+  return appts.filter(
+    (a) =>
+      a.date === date &&
+      a.status === "confirmed" &&
+      intervalsOverlap(time, durationMinutes, a.time, a.durationMinutes ?? 30)
+  );
+}
+
+export async function updateAppointmentPhone(
+  id: string,
+  customerPhone: string
+): Promise<void> {
+  await query("UPDATE appointments SET customer_phone = $1 WHERE id = $2", [
+    customerPhone,
+    id,
+  ]);
+}
+
 export async function isSlotTaken(
   businessId: string,
   date: string,
   time: string,
   durationMinutes = 30
 ): Promise<boolean> {
-  const appts = await getAppointments(businessId);
-  return appts.some(
-    (a) =>
-      a.date === date &&
-      a.status === "confirmed" &&
-      intervalsOverlap(time, durationMinutes, a.time, a.durationMinutes ?? 30)
-  );
+  const conflicts = await getConflictingAppointments(businessId, date, time, durationMinutes);
+  return conflicts.length > 0;
 }
 
 export async function findAppointmentsByPhone(

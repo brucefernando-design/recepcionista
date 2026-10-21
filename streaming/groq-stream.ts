@@ -122,39 +122,53 @@ async function groqFetchWithFailover(
 ): Promise<Response> {
   const uniqueModels = Array.from(new Set(GROQ_MODELS));
   let lastRes: Response | undefined;
+  let lastErr: any;
 
   for (const model of uniqueModels) {
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
       const payload: Record<string, any> = { ...baseBody, model };
       if (model.startsWith("qwen/")) {
         payload.reasoning_effort = "none";
       }
-      const res = await fetch(GROQ_API_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey.trim()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        signal: combineSignals(signal, 14000),
-      });
+      try {
+        const res = await fetch(GROQ_API_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey.trim()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal: combineSignals(signal, 4500),
+        });
 
-      if (res.ok) return res;
-      lastRes = res;
+        if (res.ok) return res;
+        lastRes = res;
 
-      const status = res.status;
-      const errText = await res.text().catch(() => "");
-      console.warn(`[Groq ${model}] status=${status} attempt=${attempt + 1}: ${errText.slice(0, 180)}`);
+        const status = res.status;
+        const errText = await res.text().catch(() => "");
+        console.warn(`[Groq ${model}] status=${status} attempt=${attempt + 1}: ${errText.slice(0, 180)}`);
 
-      // On 429 rate-limit or 400 tool_use_failed or 5xx, immediately switch to next model!
-      if (status === 429 || status === 400 || status >= 500) {
+        // On 429 rate-limit or 400 tool_use_failed or 5xx, immediately switch to next model!
+        if (status === 429 || status === 400 || status >= 500) {
+          break;
+        }
+        return new Response(errText, { status });
+      } catch (fetchErr: any) {
+        if (signal?.aborted) {
+          throw fetchErr;
+        }
+        lastErr = fetchErr;
+        console.warn(`[Groq ${model}] timeout/network error on attempt ${attempt + 1}:`, fetchErr?.message || fetchErr);
         break;
       }
-      return new Response(errText, { status });
     }
   }
 
-  return lastRes!;
+  if (lastRes) return lastRes;
+  throw lastErr || new Error("All Groq models failed");
 }
 
 export interface GroqStreamCallbacks {
@@ -385,7 +399,7 @@ export async function streamGroqResponse(
 
     callbacks.onComplete(fullReply.trim());
   } catch (err: any) {
-    if (err.name === "AbortError") {
+    if (signal?.aborted) {
       console.log("[Groq stream] aborted by barge-in");
       return;
     }
