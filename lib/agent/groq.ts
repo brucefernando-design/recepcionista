@@ -93,7 +93,7 @@ export async function runGroqTurn(
     type: "function",
     function: {
       name: t.name,
-      description: t.description,
+      description: t.description ?? "",
       parameters: t.input_schema as Record<string, unknown>,
     },
   }));

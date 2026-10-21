@@ -133,6 +133,7 @@ export interface CallLog {
   outcome:
     | "appointment_booked"
     | "order_taken"
+    | "callback_scheduled"
     | "faq_answered"
     | "transferred"
     | "missed"

@@ -93,7 +93,7 @@ export class CallStreamingSession {
     this.businessId = businessId || "biz_clinic";
     this.callerPhone = callerPhone || "";
 
-    this.business = await getBusiness(this.businessId);
+    this.business = (await getBusiness(this.businessId)) ?? null;
 
     // Initialize Deepgram for real-time STT
     this.deepgram = new DeepgramLiveClient(this.config.deepgramKey, "es", {
